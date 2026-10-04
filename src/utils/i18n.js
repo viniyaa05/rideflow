@@ -1,0 +1,393 @@
+/**
+ * Multi-Lingual Localization Dictionary for RideFlow
+ * Languages: English (EN), தமிழ் - Tamil (TA), हिंदी - Hindi (HI)
+ */
+
+export const TRANSLATIONS = {
+  en: {
+    // Navigation & App
+    appName: 'RideFlow',
+    appSubtitle: 'Tamil Nadu Mobility Network',
+    dashboard: 'Dashboard',
+    compareAndBook: 'Compare & Book',
+    rentals: 'Rentals',
+    drivers: 'Book Driver',
+    carpool: 'Carpool',
+    reviews: 'Reviews',
+    partnerHub: 'Partner Hub',
+    adminConsole: 'Admin Console',
+    apiSandbox: 'API Sandbox',
+    flowBot: 'FlowBot AI',
+    logout: 'Sign Out',
+    signIn: 'Sign In',
+    welcomeBack: 'Welcome back',
+    
+    // Quick Personas
+    demoPersonas: '1-Click Persona Switcher',
+    selectPersona: 'Switch Role / Persona',
+    
+    // Dashboard
+    greeting: 'Vanakkam',
+    whereHeading: 'Where are you heading today?',
+    planAndCompare: 'Plan & Compare Fares',
+    activeTrips: 'Your Active Bookings & Dispatches',
+    recentlyAccessed: 'Recently Viewed Tamil Nadu Routes',
+    quickReplan: 'Re-plan with live surge index',
+    totalTrips: 'Completed Trips',
+    co2Saved: 'Carbon Offset',
+    moneySaved: 'Total Savings',
+    exportCSV: 'Export CSV',
+    downloadInvoice: 'Download Tax Invoice (PDF)',
+    cancelTrip: 'Cancel (100% Refund)',
+    recentTrips: 'Recent Trips & Booking History',
+
+    // Compare & Modes
+    pickupOrigin: 'Pickup Origin',
+    dropoffDestination: 'Dropoff Destination',
+    travelPersona: 'Travel Persona Priority',
+    urgentSolo: 'Urgent / Solo Direct',
+    budgetCommute: 'Budget Commuter',
+    familyGroup: 'Group / Family Luggage',
+    ecoChampion: 'Eco Champion (EV / Shared)',
+    driverMode: 'Private Chauffeur',
+    carpoolMode: 'Carpool Connect',
+    rentalMode: 'Self-Drive Rental',
+    reserveNow: 'Reserve Now',
+    fareEstimate: 'Fare Estimate',
+    distance: 'Distance',
+    duration: 'Est. Travel Time',
+    swapLocations: 'Swap Origin & Destination',
+    recommendedFit: 'Algorithmic Best Fit For Your Persona',
+
+    // Partner & Host Hub (Complete Translations)
+    partnerPortalBadge: 'RIDEFLOW PARTNER & HOST PORTAL',
+    partnerPortalTitle: 'Monetize Your Car, Bike & Daily Commute',
+    partnerPortalSubtitle: 'List cars or bikes for self-drive rentals with live photo upload, share empty carpool seats, or register as a vetted cab/bike taxi captain in Tamil Nadu.',
+    partnerEarnings: 'PARTNER EARNINGS',
+    directBankDeposit: 'Direct Bank Deposit',
+    listRentalTab: 'List Car or Bike Rental',
+    offerCarpoolTab: 'Offer a Carpool Ride',
+    registerDriverTab: 'Register as Driver / Bike Taxi',
+    activeListingsTab: 'Active Community Listings',
+    partnerGuaranteeTitle: 'RideFlow Partner Guarantee',
+    partnerPerk1: 'Direct UPI Bank Settlement within 24h',
+    partnerPerk2: 'Full Comprehensive Road Damage Insurance',
+    partnerPerk3: '3-Strike Passenger Safety Moderation',
+    partnerPerk4: '4-Digit Start OTP for zero passenger disputes',
+    listVehicleFormTitle: 'List Your Car or Bike for Self-Drive Rental',
+    listVehicleFormSubtitle: 'Earn passive income when your car or bike is idle. Upload vehicle photo for instant passenger trust.',
+    vehiclePhotoLabel: 'Vehicle Reference Photo (Instant Preview)',
+    chooseImageBtn: 'Choose Image',
+    uploadDesc: 'High-resolution photo of your actual vehicle for rider trust',
+    vehicleName: 'Vehicle Model & Name',
+    brand: 'Brand / Make',
+    categoryType: 'Category & Vehicle Type',
+    hourlyPrice: 'Hourly Rental Price (₹)',
+    dailyCap: 'Daily Max Cap (₹)',
+    batteryOrFuel: 'Fuel / Energy Type',
+    seatingCapacity: 'Seating Capacity',
+    stationLocation: 'Pickup Station / Hub',
+    publishRentalBtn: 'Publish Vehicle to Self-Drive Fleet',
+
+    // Landing Page
+    heroTitle: 'RideFlow',
+    heroTagline: 'Connecting Journeys, Empowering Communities',
+    heroSubtitle: 'The unified mobility platform for Tamil Nadu. Solo Bike Taxis, Private Chauffeurs, Self-Drive Cars & Bikes, and Shared Carpools with live OTP security.',
+    getStartedBtn: 'Get Started / Sign In',
+    explore5Modes: 'Explore 5 Modes ➔',
+    enableLocationBanner: '📍 Enable GPS Location to instantly find nearest cabs, bike rentals & carpools nearby.',
+    enableLocationBtn: 'Enable Location',
+    locationEnabled: 'GPS Active:',
+    manualLocation: 'Select City Manually',
+
+    // Driver Dispatch Flow
+    dispatchingTitle: 'Contacting Nearest Captain...',
+    driverAccepted: 'Captain Accepted Your Dispatch!',
+    driverRejected: 'Captain Occupied. Auto-cascading to next nearby driver...',
+    shareOtpPrompt: 'Share 4-digit Ride Start OTP with Captain upon boarding',
+
+    // Currency & Pricing
+    rupees: '₹',
+    gstIncluded: 'Includes 5% Transport GST',
+    baseFare: 'Base Fare',
+    distanceCharge: 'Distance Charge',
+    surgeIndex: 'Traffic Surge Index',
+    normalTraffic: 'Normal Traffic (1.0x)',
+    peakSurge: 'Peak Hour Surge (1.25x)',
+    severeTraffic: 'Heavy Corridor Congestion (1.45x)',
+
+    // Auth & JWT
+    jwtActive: 'JWT Bearer Active',
+    inspectJwt: 'Inspect Token Claims',
+    expiresIn: 'Expires in',
+    orContinueWith: 'Or continue with',
+    signInGoogle: 'Sign In with Google',
+    signInGithub: 'Sign In with GitHub',
+    forgotPassword: 'Forgot password?',
+    createAccount: 'Create New Account',
+    alreadyHaveAccount: 'Already have an account? Sign In',
+    demoAccountsToggle: 'Developer & Test Credentials'
+  },
+
+  ta: {
+    // Navigation & App
+    appName: 'ரைட்ஃப்ளோ',
+    appSubtitle: 'தமிழ்நாடு ஒருங்கிணைந்த போக்குவரத்து',
+    dashboard: 'முகப்பு பலகை',
+    compareAndBook: 'கட்டணம் ஒப்பிட்டு முன்பதிவு',
+    rentals: 'வாடகை வாகனங்கள்',
+    drivers: 'ஓட்டுநர் அமர்த்தல்',
+    carpool: 'கார்பூல் பகிர்வு',
+    reviews: 'பயனர் மதிப்புரைகள்',
+    partnerHub: 'பங்குதாரர் தளம்',
+    adminConsole: 'நிர்வாக பலகை',
+    apiSandbox: 'ஏபிஐ சாண்ட்பாக்ஸ்',
+    flowBot: 'ஃப்ளோபாட் AI உதவியாளர்',
+    logout: 'வெளியேறு',
+    signIn: 'உள்நுழைக',
+    welcomeBack: 'மீண்டும் நல்வரவு',
+
+    // Quick Personas
+    demoPersonas: '1-கிளிக் பயனர் மாற்றம்',
+    selectPersona: 'பயனர் பாத்திரத்தை தேர்வு செய்க',
+
+    // Dashboard
+    greeting: 'வணக்கம்',
+    whereHeading: 'இன்று நீங்கள் எங்கு பயணிக்க விரும்புகிறீர்கள்?',
+    planAndCompare: 'பயணத் திட்டம் & கட்டணம் காண்க',
+    activeTrips: 'உங்கள் தற்போதைய முன்பதிவுகள் & பயணங்கள்',
+    recentlyAccessed: 'சமீபத்திய பயண வழிகள்',
+    quickReplan: 'மீண்டும் திட்டமிடுக',
+    totalTrips: 'நிறைவுசெய்த பயணங்கள்',
+    co2Saved: 'தவிர்க்கப்பட்ட CO₂ உமிழ்வு',
+    moneySaved: 'சேமிக்கப்பட்ட தொகை',
+    exportCSV: 'பயணக் குறிப்புகள் பதிவிறக்கம் (CSV)',
+    downloadInvoice: 'வரி ரசீது பதிவிறக்கம் (PDF)',
+    cancelTrip: 'பயணத்தை ரத்து செய்க (100% முழுத் தொகை)',
+    recentTrips: 'சமீபத்திய பயண வரலாறு',
+
+    // Compare & Modes
+    pickupOrigin: 'பயணம் தொடங்கும் இடம்',
+    dropoffDestination: 'சேருமிடம்',
+    travelPersona: 'பயண விருப்ப முன்னுரிமை',
+    urgentSolo: 'அவசர / தனிநபர் நேரடிப் பயணம்',
+    budgetCommute: 'குறைந்த கட்டண தினசரி பகிர்வு',
+    familyGroup: 'குடும்பம் / கூடுதல் உடைமைகள்',
+    ecoChampion: 'சுற்றுச்சூழல் நட்பு (மின்வாகனம்)',
+    driverMode: 'தனியார் ஓட்டுநர் (Cab)',
+    carpoolMode: 'கார்பூல் பகிர்வு',
+    rentalMode: 'சுயமாக ஓட்டும் வாடகை வாகனம்',
+    reserveNow: 'முன்பதிவு செய்க',
+    fareEstimate: 'கட்டண விவரம்',
+    distance: 'தூரம்',
+    duration: 'தோராய பயண நேரம்',
+    swapLocations: 'இருப்பிடங்களை மாற்றுக',
+    recommendedFit: 'உங்கள் விருப்பத்திற்கான சிறந்த பரிந்துரை',
+
+    // Partner & Host Hub (Complete Translations in Tamil)
+    partnerPortalBadge: 'ரைட்ஃப்ளோ பங்குதாரர் & ஹோஸ்ட் போர்டல்',
+    partnerPortalTitle: 'உங்கள் கார், பைக் மற்றும் பயணங்களை வருமானமாக்குங்கள்',
+    partnerPortalSubtitle: 'உங்கள் வாகனங்களை சுயமாக ஓட்டும் வாடகைக்கு பதிவு செய்யுங்கள், காலியாக உள்ள கார்பூல் இருக்கைகளைப் பகிருங்கள், அல்லது தமிழ்நாட்டில் சரிபார்க்கப்பட்ட ஓட்டுநராக பதிவு செய்யுங்கள்.',
+    partnerEarnings: 'பங்குதாரர் வருவாய்',
+    directBankDeposit: 'நேரடி வங்கி பரிமாற்றம்',
+    listRentalTab: 'வாடகை கார் / பைக் சேர்க்க',
+    offerCarpoolTab: 'கார்பூல் பயணம் அறிவிக்க',
+    registerDriverTab: 'ஓட்டுநராக பதிவு செய்ய',
+    activeListingsTab: 'செயலில் உள்ள பதிவுகள்',
+    partnerGuaranteeTitle: 'ரைட்ஃப்ளோ பங்குதாரர் உத்தரவாதம்',
+    partnerPerk1: '24 மணிநேரத்திற்குள் நேரடி UPI வங்கி வரவு',
+    partnerPerk2: 'முழுமையான வாகன சேத காப்பீடு',
+    partnerPerk3: '3-ஸ்ட்ரைக் பயணப் பாதுகாப்பு ஒழுங்குமுறை',
+    partnerPerk4: 'சர்ச்சையற்ற பயணத்திற்கு 4-இலக்க Start OTP',
+    listVehicleFormTitle: 'சுய-ஓட்டுனர் வாடகைக்கு வாகனத்தை சேர்க்கவும்',
+    listVehicleFormSubtitle: 'உங்கள் வாகனம் பயன்பாட்டில் இல்லாத போது வருமானம் ஈட்டுங்கள். பயனர் நம்பிக்கைக்கு நேரடி புகைப்படத்தைப் பதிவேற்றுங்கள்.',
+    vehiclePhotoLabel: 'வாகன நேரடி புகைப்படம் (உடனடி முன்னோட்டம்)',
+    chooseImageBtn: 'படத்தை தேர்வு செய்க',
+    uploadDesc: 'பயணிகள் நம்பிக்கைக்கு உங்கள் உண்மையான வாகன புகைப்படம்',
+    vehicleName: 'வாகன மாடல் & பெயர்',
+    brand: 'வாகன தயாரிப்பு நிறுவனம்',
+    categoryType: 'பிரிவு & வாகன வகை',
+    hourlyPrice: 'மணிநேர வாடகைக் கட்டணம் (₹)',
+    dailyCap: 'தினசரி அதிகபட்ச வரம்பு (₹)',
+    batteryOrFuel: 'எரிபொருள் / மின்சார வகை',
+    seatingCapacity: 'இருக்கைகளின் எண்ணிக்கை',
+    stationLocation: 'பிக்அப் மையம் / நகரம்',
+    publishRentalBtn: 'வாடகை வாகனப் பட்டியலில் சேர்க்க',
+
+    // Landing Page
+    heroTitle: 'ரைட்ஃப்ளோ',
+    heroTagline: 'பயணங்களை இணைத்து, சமூகங்களை வலுப்படுத்துகிறது',
+    heroSubtitle: 'தமிழ்நாட்டின் ஒருங்கிணைந்த போக்குவரத்து தளம். பைக் டாக்ஸி, சொகுசு கார்கள், வாடகை பைக்குகள் மற்றும் பாதுகாப்பான கார்பூல்.',
+    getStartedBtn: 'தொடங்குக / உள்நுழைக',
+    explore5Modes: '5 முறைகளை காண்க ➔',
+    enableLocationBanner: '📍 அருகிலுள்ள பைக் டாக்ஸிகள் மற்றும் வாடகை வாகனங்களைக் கண்டறிய GPS இருப்பிடத்தை இயக்கவும்.',
+    enableLocationBtn: 'GPS இருப்பிடத்தை இயக்கு',
+    locationEnabled: 'GPS இருப்பிடம்:',
+    manualLocation: 'நகரத்தை கைமுறையாக தேர்வு செய்க',
+
+    // Driver Dispatch Flow
+    dispatchingTitle: 'அருகிலுள்ள ஓட்டுநரைத் தொடர்பு கொள்கிறது...',
+    driverAccepted: 'ஓட்டுநர் உங்கள் பயணத்தை ஏற்றுக்கொண்டார்!',
+    driverRejected: 'ஓட்டுநர் மற்றொரு பயணத்தில் உள்ளார். அடுத்த ஓட்டுநருக்கு தானாக மாற்றப்படுகிறது...',
+    shareOtpPrompt: 'வாகனத்தில் ஏறும் போது 4-இலக்க Ride Start OTP ஐ ஓட்டுநரிடம் கூறவும்',
+
+    // Currency & Pricing
+    rupees: '₹',
+    gstIncluded: '5% ஜிஎஸ்டி (GST) போக்குவரத்து வரி சேர்க்கப்பட்டுள்ளது',
+    baseFare: 'அடிப்படை கட்டணம்',
+    distanceCharge: 'தூரக் கட்டணம்',
+    surgeIndex: 'போக்குவரத்து நெரிசல் குறியீடு',
+    normalTraffic: 'சாதாரண போக்குவரத்து (1.0x)',
+    peakSurge: 'நெரிசல் நேரக் கூடுதல் (1.25x)',
+    severeTraffic: 'அதிக நெரிசல் காரிடார் (1.45x)',
+
+    // Auth & JWT
+    jwtActive: 'JWT பாதுகாப்பு இயங்குகிறது',
+    inspectJwt: 'டோக்கன் விவரங்கள் காண்க',
+    expiresIn: 'காலாவதி நேரம்',
+    orContinueWith: 'அல்லது இவற்றுடன் தொடர்க',
+    signInGoogle: 'கூகிள் (Google) மூலம் உள்நுழைக',
+    signInGithub: 'கிட்ஹப் (GitHub) மூலம் உள்நுழைக',
+    forgotPassword: 'கடவுச்சொல் மறந்துவிட்டதா?',
+    createAccount: 'புதிய கணக்கை உருவாக்கவும்',
+    alreadyHaveAccount: 'ஏற்கனவே கணக்கு உள்ளதா? உள்நுழைக',
+    demoAccountsToggle: 'டெவலப்பர் & மாதிரி கணக்குகள்'
+  },
+
+  hi: {
+    // Navigation & App
+    appName: 'राइडफ्लो',
+    appSubtitle: 'तमिलनाडु मोबिलिटी नेटवर्क',
+    dashboard: 'डैशबोर्ड',
+    compareAndBook: 'किराया तुलना और बुकिंग',
+    rentals: 'कार एवं बाइक रेंटल',
+    drivers: 'ड्राइवर बुक करें',
+    carpool: 'कारपूल शेयरिंग',
+    reviews: 'समीक्षाएं एवं रेटिंग',
+    partnerHub: 'पार्टनर हब',
+    adminConsole: 'एडमिन कंसोल',
+    apiSandbox: 'एपीआई सैंडबॉक्स',
+    flowBot: 'फ्लोबॉट AI सहायक',
+    logout: 'साइन आउट',
+    signIn: 'साइन इन',
+    welcomeBack: 'स्वागत है',
+
+    // Quick Personas
+    demoPersonas: '1-क्लिक प्रोफाइल स्विचर',
+    selectPersona: 'उपयोगकर्ता प्रोफाइल चुनें',
+
+    // Dashboard
+    greeting: 'नमस्ते',
+    whereHeading: 'आज आप कहाँ जाना चाहते हैं?',
+    planAndCompare: 'मार्ग और किराया तुलना करें',
+    activeTrips: 'आपकी सक्रिय यात्राएं और प्रेषण',
+    recentlyAccessed: 'हाल ही में देखे गए मार्ग',
+    quickReplan: 'पुनः योजना बनाएं',
+    totalTrips: 'कुल पूर्ण यात्राएं',
+    co2Saved: 'बचाया गया CO₂ उत्सर्जन',
+    moneySaved: 'कैब की तुलना में कुल बचत',
+    exportCSV: 'यात्रा इतिहास डाउनलोड (CSV)',
+    downloadInvoice: 'जीएसटी टैक्स रसीद (PDF)',
+    cancelTrip: 'यात्रा रद्द करें (100% रिफंड)',
+    recentTrips: 'हालिया यात्रा इतिहास',
+
+    // Compare & Modes
+    pickupOrigin: 'पिकअप स्थान',
+    dropoffDestination: 'गंतव्य स्थान',
+    travelPersona: 'यात्रा प्राथमिकता',
+    urgentSolo: 'तत्काल / एकल यात्रा',
+    budgetCommute: 'किफायती दैनिक कारपूल',
+    familyGroup: 'परिवार / सामान सहित यात्रा',
+    ecoChampion: 'पर्यावरण मित्र (ईवी / शेयर्ड)',
+    driverMode: 'प्राइवेट ड्राइवर (Cab)',
+    carpoolMode: 'कारपूल कनेक्ट',
+    rentalMode: 'सेल्फ-ड्राइव रेंटल',
+    reserveNow: 'अभी बुक करें',
+    fareEstimate: 'अनुमानित किराया',
+    distance: 'दूरी',
+    duration: 'अनुमानित समय',
+    swapLocations: 'स्थान बदलें',
+    recommendedFit: 'आपकी पसंद के अनुसार सर्वश्रेष्ठ विकल्प',
+
+    // Partner & Host Hub (Complete Translations in Hindi)
+    partnerPortalBadge: 'राइडफ्लो पार्टनर एवं होस्ट पोर्टल',
+    partnerPortalTitle: 'अपनी कार, बाइक और दैनिक यात्रा को कमाई का जरिया बनाएं',
+    partnerPortalSubtitle: 'सेल्फ-ड्राइव रेंटल के लिए कार/बाइक लिस्ट करें, खाली कारपूल सीटें साझा करें या तमिलनाडु में कैब/बाइक टैक्सी कैप्टन बनें।',
+    partnerEarnings: 'पार्टनर कमाई',
+    directBankDeposit: 'सीधे बैंक खाते में',
+    listRentalTab: 'कार/बाइक रेंटल जोड़ें',
+    offerCarpoolTab: 'कारपूल राइड पोस्ट करें',
+    registerDriverTab: 'ड्राइवर के रूप में रजिस्टर करें',
+    activeListingsTab: 'सक्रिय लिस्टिंग',
+    partnerGuaranteeTitle: 'राइडफ्लो पार्टनर गारंटी',
+    partnerPerk1: '24 घंटे के भीतर सीधा UPI बैंक भुगतान',
+    partnerPerk2: 'पूर्ण व्यापक वाहन बीमा कवर',
+    partnerPerk3: '3-स्ट्राइक यात्री सुरक्षा नियम',
+    partnerPerk4: 'विवाद-मुक्त यात्रा हेतु 4-अंकीय Start OTP',
+    listVehicleFormTitle: 'सेल्फ-ड्राइव रेंटल हेतु वाहन लिस्ट करें',
+    listVehicleFormSubtitle: 'जब आपका वाहन खाली हो तब अतिरिक्त कमाई करें। यात्रियों के विश्वास हेतु वाहन की फोटो अपलोड करें।',
+    vehiclePhotoLabel: 'वाहन की फोटो (लाइव प्रीव्यू)',
+    chooseImageBtn: 'फोटो चुनें',
+    uploadDesc: 'यात्री विश्वास हेतु आपके वास्तविक वाहन की स्पष्ट फोटो',
+    vehicleName: 'वाहन का नाम और मॉडल',
+    brand: 'कंपनी / ब्रांड',
+    categoryType: 'श्रेणी एवं वाहन प्रकार',
+    hourlyPrice: 'प्रति घंटा किराया (₹)',
+    dailyCap: 'दैनिक अधिकतम सीमा (₹)',
+    batteryOrFuel: 'ईंधन / इलेक्ट्रिक प्रकार',
+    seatingCapacity: 'सीटिंग क्षमता',
+    stationLocation: 'पिकअप हब / शहर',
+    publishRentalBtn: 'रेंटल फ्लीट में वाहन प्रकाशित करें',
+
+    // Landing Page
+    heroTitle: 'राइडफ्लो',
+    heroTagline: 'यात्राओं को जोड़ना, समुदायों को सशक्त बनाना',
+    heroSubtitle: 'तमिलनाडु का एकीकृत मोबिलिटी प्लेटफॉर्म। बाइक टैक्सी, प्राइवेट कैब, रेंटल कारें और सुरक्षित कारपूल।',
+    getStartedBtn: 'शुरू करें / साइन इन',
+    explore5Modes: '5 मोड देखें ➔',
+    enableLocationBanner: '📍 नजदीकी कैब और बाइक रेंटल खोजने के लिए जीपीएस लोकेशन चालू करें।',
+    enableLocationBtn: 'लोकेशन चालू करें',
+    locationEnabled: 'जीपीएस सक्रिय:',
+    manualLocation: 'शहर चुनें',
+
+    // Driver Dispatch Flow
+    dispatchingTitle: 'नजदीकी कैप्टन से संपर्क किया जा रहा है...',
+    driverAccepted: 'कैप्टन ने आपकी बुकिंग स्वीकार कर ली!',
+    driverRejected: 'कैप्टन व्यस्त हैं। अगले नजदीकी कैप्टन को ऑटो-फॉरवर्ड किया जा रहा है...',
+    shareOtpPrompt: 'सफर शुरू करते समय 4-अंकीय Ride Start OTP कैप्टन को बताएं',
+
+    // Currency & Pricing
+    rupees: '₹',
+    gstIncluded: '5% परिवहन जीएसटी शामिल है',
+    baseFare: 'मूल किराया',
+    distanceCharge: 'दूरी शुल्क',
+    surgeIndex: 'ट्रैफिक सर्ज इंडेक्स',
+    normalTraffic: 'सामान्य ट्रैफिक (1.0x)',
+    peakSurge: 'व्यस्त समय सर्ज (1.25x)',
+    severeTraffic: 'भारी जाम कॉरिडोर (1.45x)',
+
+    // Auth & JWT
+    jwtActive: 'JWT सुरक्षा सक्रिय',
+    inspectJwt: 'टोकन विवरण देखें',
+    expiresIn: 'समाप्ति शेष',
+    orContinueWith: 'या इसके साथ जारी रखें',
+    signInGoogle: 'गूगल से साइन इन करें',
+    signInGithub: 'गिटहब से साइन इन करें',
+    forgotPassword: 'पासवर्ड भूल गए?',
+    createAccount: 'नया खाता बनाएं',
+    alreadyHaveAccount: 'पहले से खाता है? साइन इन करें',
+    demoAccountsToggle: 'डेवलपर एवं डेमो अकाउंट्स'
+  }
+};
+
+export const SUPPORTED_LANGUAGES = [
+  { code: 'en', name: 'English', flag: '🇬🇧', label: 'English' },
+  { code: 'ta', name: 'தமிழ்', flag: '🇮🇳', label: 'Tamil' },
+  { code: 'hi', name: 'हिंदी', flag: '🇮🇳', label: 'Hindi' }
+];
+
+export function getTranslation(lang = 'en', key = '') {
+  const currentDict = TRANSLATIONS[lang] || TRANSLATIONS.en;
+  return currentDict[key] || TRANSLATIONS.en[key] || key;
+}
+
