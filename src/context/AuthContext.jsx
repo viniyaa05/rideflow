@@ -409,30 +409,22 @@ export const AuthProvider = ({ children }) => {
 
     // Attempt verification via Express Backend API (MongoDB)
     try {
-      const apiRes = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, password: inputPassword })
-      });
-      if (apiRes.ok) {
-        const data = await apiRes.json();
-        if (data && data.success && data.user) {
-          const backendUser = {
-            ...data.user,
-            walletBalance: data.user.walletBalance || 500,
-            stats: data.user.stats || { totalTrips: 4, co2SavedKg: 9.6, moneySavedRupees: 420 }
-          };
-          setUser(backendUser);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(backendUser));
-          const jwt = generateJWT(backendUser);
-          setJwtToken(jwt.token);
-          setIsLoading(false);
-          return backendUser;
-        }
-      } else if (apiRes.status === 401) {
-        const errData = await apiRes.json();
+      const loginRes = await api.login(normalizedEmail, inputPassword);
+      if (loginRes && loginRes.success && loginRes.user) {
+        const backendUser = {
+          ...loginRes.user,
+          walletBalance: loginRes.user.walletBalance || 500,
+          stats: loginRes.user.stats || { totalTrips: 4, co2SavedKg: 9.6, moneySavedRupees: 420 }
+        };
+        setUser(backendUser);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(backendUser));
+        const jwt = generateJWT(backendUser);
+        setJwtToken(jwt.token);
         setIsLoading(false);
-        throw new Error(errData.error || 'Incorrect password for this account. Access denied.');
+        return backendUser;
+      } else if (loginRes && loginRes.error && loginRes.error.includes('Incorrect password')) {
+        setIsLoading(false);
+        throw new Error(loginRes.error);
       }
     } catch (apiErr) {
       if (apiErr.message.includes('Incorrect password')) {
@@ -523,6 +515,18 @@ export const AuthProvider = ({ children }) => {
       oauthProvider: 'google',
       stats: { totalTrips: 2, co2SavedKg: 4.8, moneySavedRupees: 180, preferredMode: 'Carpool Connect' }
     };
+
+    // Immediately persist and sync user into MongoDB Atlas users collection
+    try {
+      const syncRes = await api.syncOAuthUser(googleUser);
+      if (syncRes && syncRes.user) {
+        if (syncRes.user.id) googleUser.id = syncRes.user.id;
+        console.log('[MongoDB OAuth Sync] Successfully persisted Google user to MongoDB Atlas:', googleUser.email, 'MongoSaved:', syncRes.mongoSaved);
+      }
+    } catch (err) {
+      console.warn('[MongoDB OAuth Sync Warning]', err.message);
+    }
+
     setUser(googleUser);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(googleUser));
     const jwt = generateJWT(googleUser);
@@ -549,6 +553,18 @@ export const AuthProvider = ({ children }) => {
       oauthProvider: 'github',
       stats: { totalTrips: 8, co2SavedKg: 18.2, moneySavedRupees: 940, preferredMode: 'Self-Drive Rental' }
     };
+
+    // Immediately persist and sync user into MongoDB Atlas users collection
+    try {
+      const syncRes = await api.syncOAuthUser(githubUser);
+      if (syncRes && syncRes.user) {
+        if (syncRes.user.id) githubUser.id = syncRes.user.id;
+        console.log('[MongoDB OAuth Sync] Successfully persisted GitHub user to MongoDB Atlas:', githubUser.email, 'MongoSaved:', syncRes.mongoSaved);
+      }
+    } catch (err) {
+      console.warn('[MongoDB OAuth Sync Warning]', err.message);
+    }
+
     setUser(githubUser);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(githubUser));
     const jwt = generateJWT(githubUser);
@@ -588,10 +604,6 @@ export const AuthProvider = ({ children }) => {
     creds[normalizedEmail] = { password: userDataInput.password, userData: newUser };
     writeCredentials(creds);
 
-    setUser(newUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-    localStorage.setItem(`rideflow_bookings_${newUserId}`, JSON.stringify([]));
-    
     // Persist new user into MongoDB database
     try {
       const regRes = await api.register({
@@ -602,11 +614,18 @@ export const AuthProvider = ({ children }) => {
         role: 'user'
       });
       if (regRes && regRes.success) {
-        console.log('[MongoDB Auth Sync] New user registered & saved in MongoDB:', newUser.email);
+        if (regRes.user && regRes.user.id) {
+          newUser.id = regRes.user.id;
+        }
+        console.log('[MongoDB Auth Sync] New user registered & saved in MongoDB:', newUser.email, 'MongoSaved:', regRes.mongoSaved);
       }
     } catch (err) {
       console.warn('[MongoDB Auth Sync Warning]', err.message);
     }
+
+    setUser(newUser);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
+    localStorage.setItem(`rideflow_bookings_${newUserId}`, JSON.stringify([]));
 
     const jwt = generateJWT(newUser);
     setJwtToken(jwt.token);

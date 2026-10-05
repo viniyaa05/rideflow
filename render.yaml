@@ -11,7 +11,7 @@ services:
       - key: PORT
         value: 10000
       - key: MONGODB_URI
-        value: mongodb+srv://kaviniyaa05_db_user:kavi123456@cluster0.x6rov7b.mongodb.net/rideflow?authSource=admin&retryWrites=true&w=majority&appName=Cluster0
+        value: mongodb://kaviniyaa05_db_user:kavi123456@ac-caxcvf8-shard-00-00.x6rov7b.mongodb.net:27017,ac-caxcvf8-shard-00-01.x6rov7b.mongodb.net:27017,ac-caxcvf8-shard-00-02.x6rov7b.mongodb.net:27017/rideflow?tls=true&authSource=admin&retryWrites=true&w=majority
       - key: EMAIL_USER
         value: rideflow2026@gmail.com
       - key: EMAIL_PASS

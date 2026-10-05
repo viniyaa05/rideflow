@@ -246,9 +246,9 @@ router.post('/register', async (req, res) => {
     // 2. Persist to MongoDB Atlas
     let mongoSaved = false;
     try {
-      await User.create(newUser);
+      await User.findOneAndUpdate({ email: cleanEmail }, newUser, { upsert: true, new: true });
       mongoSaved = true;
-      console.log(`[MongoDB Auth] User successfully created in MongoDB Atlas: ${newUser.email}`);
+      console.log(`[MongoDB Auth] User successfully created/upserted in MongoDB Atlas: ${newUser.email}`);
     } catch (mErr) {
       console.warn(`[MongoDB Auth] MongoDB Atlas save fallback:`, mErr.message);
     }
@@ -262,7 +262,93 @@ router.post('/register', async (req, res) => {
         ? 'Account registered and persisted successfully in MongoDB database'
         : 'Account registered and persisted successfully in database storage',
       user: newUser,
+      mongoSaved,
       dbSaved: true
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// OAuth Synchronization Endpoint (Google / GitHub passwordless sign-in)
+router.post('/oauth-sync', async (req, res) => {
+  try {
+    const { id, name, email, phone, avatar, role, oauthProvider, walletBalance } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required for OAuth sign-in' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = (name || cleanEmail.split('@')[0]).trim();
+    const cleanPhone = phone || '+91 98400 00000';
+    const cleanProvider = oauthProvider || 'google';
+
+    let user = null;
+    let mongoSaved = false;
+
+    // Check if user already exists in MongoDB
+    try {
+      user = await User.findOne({ email: cleanEmail });
+      if (user) {
+        if (cleanName && user.name !== cleanName) user.name = cleanName;
+        if (avatar) user.avatar = avatar;
+        if (cleanProvider) user.oauthProvider = cleanProvider;
+        await user.save();
+        mongoSaved = true;
+        console.log(`[MongoDB Auth] Existing OAuth user synced in MongoDB Atlas: ${cleanEmail}`);
+      } else {
+        const newUserId = id || ('usr_' + cleanProvider + '_' + Date.now());
+        const newUserDoc = {
+          id: newUserId,
+          name: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          password: 'oauth_secure_password',
+          role: role || 'user',
+          avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=4285F4&color=fff`,
+          oauthProvider: cleanProvider,
+          rating: 5.0,
+          tripsCount: 0,
+          walletBalance: walletBalance || 500,
+          strikes: 0,
+          isSuspended: false,
+          appealStatus: 'none',
+          createdAt: new Date().toISOString()
+        };
+        user = await User.create(newUserDoc);
+        mongoSaved = true;
+        console.log(`[MongoDB Auth] New OAuth user successfully created in MongoDB Atlas: ${cleanEmail}`);
+      }
+    } catch (mErr) {
+      console.warn(`[MongoDB Auth] MongoDB Atlas OAuth sync warning:`, mErr.message);
+    }
+
+    const userData = user ? (user.toObject ? user.toObject() : user) : {
+      id: id || ('usr_' + cleanProvider + '_' + Date.now()),
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      password: 'oauth_secure_password',
+      role: role || 'user',
+      avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=4285F4&color=fff`,
+      oauthProvider: cleanProvider,
+      rating: 5.0,
+      tripsCount: 0,
+      walletBalance: walletBalance || 500,
+      strikes: 0,
+      isSuspended: false
+    };
+
+    dbStore.addUser(userData);
+
+    return res.json({
+      success: true,
+      message: mongoSaved 
+        ? `OAuth account (${cleanEmail}) saved and verified in MongoDB Atlas users collection`
+        : `OAuth account (${cleanEmail}) saved to persistent storage`,
+      user: userData,
+      mongoSaved
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });

@@ -4,15 +4,10 @@ import dns from 'dns';
 
 dotenv.config();
 
-// Configure reliable DNS servers for Windows SRV resolution
-try {
-  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
-} catch (dnsErr) {
-  console.warn('[DNS Configuration Warning]', dnsErr.message);
-}
+// Direct verified replica set seed list (bypasses SRV lookup issues on restricted networks)
+const DIRECT_REPLICA_URI = 'mongodb://kaviniyaa05_db_user:kavi123456@ac-caxcvf8-shard-00-00.x6rov7b.mongodb.net:27017,ac-caxcvf8-shard-00-01.x6rov7b.mongodb.net:27017,ac-caxcvf8-shard-00-02.x6rov7b.mongodb.net:27017/rideflow?tls=true&authSource=admin&retryWrites=true&w=majority';
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/rideflow';
-
+const MONGODB_URI = process.env.MONGODB_URI || DIRECT_REPLICA_URI;
 
 let isConnected = false;
 
@@ -38,11 +33,13 @@ export const connectDB = async () => {
     return true;
   }
 
+  // Attempt 1: Try configured URI
   try {
-    console.log(`[MongoDB] Attempting connection to: ${safeURI}...`);
+    console.log(`[MongoDB] Connecting to MongoDB Atlas: ${safeURI}...`);
     const conn = await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 12000,
-      connectTimeoutMS: 12000,
+      family: 4,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
       socketTimeoutMS: 45000,
     });
     
@@ -50,7 +47,26 @@ export const connectDB = async () => {
     console.log(`[MongoDB Atlas] Connected successfully to host: ${conn.connection.host}`);
     return true;
   } catch (error) {
-    console.warn(`[MongoDB Warning] Could not connect to MongoDB Atlas (${safeURI}). Error: ${error.message}`);
+    console.warn(`[MongoDB Warning] Primary connection attempt failed: ${error.message}`);
+    
+    // Attempt 2: If primary was SRV or failed, try direct replica set URI
+    if (MONGODB_URI !== DIRECT_REPLICA_URI) {
+      try {
+        console.log(`[MongoDB] Attempting fallback to direct replica set seed list...`);
+        const fallbackConn = await mongoose.connect(DIRECT_REPLICA_URI, {
+          family: 4,
+          serverSelectionTimeoutMS: 10000,
+          connectTimeoutMS: 10000,
+          socketTimeoutMS: 45000,
+        });
+        isConnected = !!fallbackConn.connections[0].readyState;
+        console.log(`[MongoDB Atlas] Connected successfully via direct replica set to host: ${fallbackConn.connection.host}`);
+        return true;
+      } catch (fbErr) {
+        console.warn(`[MongoDB Warning] Direct replica set fallback failed: ${fbErr.message}`);
+      }
+    }
+
     console.log('[MongoDB] Running in In-Memory / Hybrid Mode with resilient local persistence.');
     isConnected = false;
     return false;

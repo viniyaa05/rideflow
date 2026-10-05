@@ -68,10 +68,24 @@ export const api = {
       const res = await fetchWithTimeout(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         body: JSON.stringify(userData)
-      });
+      }, 15000);
       return await res.json();
     } catch {
       return { offline: true };
+    }
+  },
+
+  // Auth: Sync OAuth user with MongoDB Atlas
+  async syncOAuthUser(userData) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/auth/oauth-sync`, {
+        method: 'POST',
+        body: JSON.stringify(userData)
+      }, 15000);
+      return await res.json();
+    } catch (err) {
+      console.warn('[API OAuth Sync Fallback]', err);
+      return { offline: true, user: userData };
     }
   },
 

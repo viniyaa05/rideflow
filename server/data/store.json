@@ -1,6 +1,27 @@
 {
   "users": [
     {
+      "id": "usr_google_1791209289049",
+      "name": "Kaviniyaa Live Test",
+      "phone": "+91 98400 00000",
+      "email": "kaviniyaa.live.newuser@gmail.com",
+      "password": "oauth_secure_password",
+      "role": "user",
+      "avatar": "https://ui-avatars.com/api/?name=Kaviniyaa%20Live%20Test&background=4285F4&color=fff",
+      "oauthProvider": "google",
+      "rating": 5,
+      "tripsCount": 0,
+      "walletBalance": 500,
+      "strikes": 0,
+      "isSuspended": false,
+      "suspensionReason": null,
+      "appealStatus": "none",
+      "createdAt": "2026-10-05T14:08:09.049Z",
+      "_id": "6ac3af493724d4219d527b57",
+      "updatedAt": "2026-10-05T14:08:09.049Z",
+      "__v": 0
+    },
+    {
       "id": "usr_test_1791196454665",
       "name": "Kaviniyaa Test User",
       "email": "kaviniyaa.test_1791196454665@gmail.com",
@@ -95,6 +116,42 @@
   ],
   "rentals": [
     {
+      "id": "rent-user-1791209306595",
+      "name": "Kaviniyaa Test Bike 350",
+      "title": "Kaviniyaa Test Bike 350",
+      "brand": "Royal Enfield",
+      "type": "Bike",
+      "category": "bike-rent",
+      "model": "Kaviniyaa Test Bike 350",
+      "hourlyPrice": 95,
+      "dailyPrice": 650,
+      "pricePerHour": 95,
+      "rangeKm": 420,
+      "seats": 2,
+      "transmission": "Manual",
+      "location": "Chennai Central Railway Station",
+      "image": "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600",
+      "features": [
+        "Host Verified",
+        "Sanitized AC / Gear",
+        "Free Cancellation"
+      ],
+      "freeCancellation": true,
+      "instantUnlock": true,
+      "fuel": "Petrol",
+      "fuelType": "Petrol",
+      "hostName": "Partner Host",
+      "postedByUserId": "usr_partner",
+      "isUserListing": true,
+      "available": true,
+      "gpsLocation": {
+        "lat": 13.0827,
+        "lng": 80.2707,
+        "address": "Chennai Central Railway Station"
+      },
+      "createdAt": "2026-10-05T14:08:26.595Z"
+    },
+    {
       "id": "rent_test_1791196455453",
       "name": "Tata Nexon EV Dark Edition",
       "brand": "Tata",
@@ -139,14 +196,95 @@
       "isUserListing": true
     }
   ],
-  "vehicles": [],
-  "bookings": [],
-  "resets": {
-    "24104108@nec.edu.in": {
-      "otp": "286891",
-      "expiresAt": 1791198850835,
-      "attempts": 0,
-      "recipient": "24104108@nec.edu.in"
+  "vehicles": [
+    {
+      "id": "rent-user-1791209306595",
+      "name": "Kaviniyaa Test Bike 350",
+      "title": "Kaviniyaa Test Bike 350",
+      "brand": "Royal Enfield",
+      "type": "Bike",
+      "category": "bike-rent",
+      "model": "Kaviniyaa Test Bike 350",
+      "hourlyPrice": 95,
+      "dailyPrice": 650,
+      "pricePerHour": 95,
+      "rangeKm": 420,
+      "seats": 2,
+      "transmission": "Manual",
+      "location": "Chennai Central Railway Station",
+      "image": "https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=600",
+      "features": [
+        "Host Verified",
+        "Sanitized AC / Gear",
+        "Free Cancellation"
+      ],
+      "freeCancellation": true,
+      "instantUnlock": true,
+      "fuel": "Petrol",
+      "fuelType": "Petrol",
+      "hostName": "Partner Host",
+      "postedByUserId": "usr_partner",
+      "isUserListing": true,
+      "available": true,
+      "gpsLocation": {
+        "lat": 13.0827,
+        "lng": 80.2707,
+        "address": "Chennai Central Railway Station"
+      },
+      "createdAt": "2026-10-05T14:08:26.595Z"
+    },
+    {
+      "id": "veh_car_2",
+      "title": "Mahindra Thar 4x4",
+      "type": "car",
+      "category": "car-rent",
+      "model": "Thar LX Hardtop Diesel 4x4",
+      "pricePerHour": 240,
+      "seats": 4,
+      "fuelType": "Diesel",
+      "image": "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?w=400",
+      "available": true,
+      "location": "Guindy Race Course"
+    },
+    {
+      "id": "veh_car_1",
+      "title": "Maruti Suzuki Dzire",
+      "type": "car",
+      "category": "drivers",
+      "model": "Dzire ZXi Plus",
+      "pricePerKm": 14,
+      "seats": 4,
+      "fuelType": "Petrol/CNG",
+      "image": "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=400",
+      "available": true,
+      "location": "OMR IT Expressway"
+    },
+    {
+      "id": "veh_bike_2",
+      "title": "Royal Enfield Classic 350",
+      "type": "bike",
+      "category": "bike-rent",
+      "model": "Classic 350 Chrome Red",
+      "pricePerHour": 45,
+      "seats": 2,
+      "fuelType": "Petrol",
+      "image": "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=400",
+      "available": true,
+      "location": "Anna Nagar West"
+    },
+    {
+      "id": "veh_bike_1",
+      "title": "Ola Electric S1 Pro",
+      "type": "bike",
+      "category": "bike-taxi",
+      "model": "Ola S1 Pro Gen 2",
+      "pricePerKm": 6,
+      "seats": 1,
+      "fuelType": "Electric",
+      "image": "https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=400",
+      "available": true,
+      "location": "Chennai Central"
     }
-  }
+  ],
+  "bookings": []
 }
