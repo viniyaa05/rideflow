@@ -14,17 +14,23 @@ import {
   ChevronRight,
   ShieldAlert,
   Radio,
-  Bike
+  Bike,
+  Compass
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { estimateRoute, calculateDriverFare } from '../utils/fareEstimator';
 import { getLiveRating } from '../utils/ratings';
+import { calculateDistanceKm, estimateWalkingOrDrivingTime, TN_TRANSIT_HUBS } from '../utils/geoUtils';
 import ReportModal from './ReportModal';
 import LiveTrackingModal from './LiveTrackingModal';
 
 export default function DriversView({ onOpenChat, onRequestDriver }) {
   const { drivers, reviews } = useAuth();
   
+  // User GPS Proximity State
+  const [userHub, setUserHub] = useState(TN_TRANSIT_HUBS[0]); // default Chennai Central
+  const [isUsingDeviceGps, setIsUsingDeviceGps] = useState(false);
+
   // Live route fare estimator state
   const [fromRoute, setFromRoute] = useState('Chennai Central Railway Station');
   const [toRoute, setToRoute] = useState('OMR IT Expressway (Sholinganallur)');
@@ -39,6 +45,27 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
   // Modals
   const [reportingDriver, setReportingDriver] = useState(null);
   const [trackingDriver, setTrackingDriver] = useState(null);
+
+  // Handle GPS location request from device
+  const handleDetectDeviceGps = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserHub({
+            id: 'device_current_gps',
+            name: '📍 My Current Location (Device GPS)',
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          });
+          setIsUsingDeviceGps(true);
+          setSortBy('nearest');
+        },
+        () => {
+          alert('Could not retrieve device GPS. Defaulting to Chennai Central Hub.');
+        }
+      );
+    }
+  };
 
   // Derive live fare breakdown from route
   const liveRoute = useMemo(() => {
@@ -66,16 +93,28 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
   // Filter and sort driver list
   const filteredDrivers = useMemo(() => {
     return drivers
-      .map((driver) => ({
-        ...driver,
-        liveRating: getLiveRating({
-          reviews,
-          targetType: 'driver',
-          targetName: driver.name,
-          fallbackRating: driver.rating,
-          fallbackCount: driver.reviewCount
-        })
-      }))
+      .map((driver) => {
+        const driverLat = driver.currentLocation?.lat || 13.0827;
+        const driverLng = driver.currentLocation?.lng || 80.2707;
+        const distance = calculateDistanceKm(userHub.lat, userHub.lng, driverLat, driverLng);
+        const estTime = estimateWalkingOrDrivingTime(distance);
+        const computedDistance = distance !== null ? distance : (driver.distanceKm || 1.2);
+        const computedEta = Math.max(2, Math.round(computedDistance * 2.5));
+
+        return {
+          ...driver,
+          calculatedDistanceKm: computedDistance,
+          calculatedEtaMins: computedEta,
+          estimatedTime: estTime,
+          liveRating: getLiveRating({
+            reviews,
+            targetType: 'driver',
+            targetName: driver.name,
+            fallbackRating: driver.rating,
+            fallbackCount: driver.reviewCount
+          })
+        };
+      })
       .filter((driver) => {
         const isBikeCaptain = driver.category === 'bike' || driver.type === 'bike' || driver.vehicleModel?.toLowerCase().includes('enfield') || driver.vehicleModel?.toLowerCase().includes('jupiter') || driver.name?.toLowerCase().includes('rajesh');
 
@@ -98,12 +137,12 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
 
         return true;
       }).sort((a, b) => {
-        if (sortBy === 'nearest') return a.etaMins - b.etaMins;
+        if (sortBy === 'nearest') return a.calculatedDistanceKm - b.calculatedDistanceKm;
         if (sortBy === 'top-rated') return b.liveRating.rating - a.liveRating.rating;
         if (sortBy === 'experienced') return b.trips - a.trips;
         return 0;
       });
-  }, [drivers, reviews, searchName, minRating, sortBy, vehicleFilter]);
+  }, [drivers, reviews, searchName, minRating, sortBy, vehicleFilter, userHub]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
@@ -211,6 +250,63 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
           </div>
         </div>
 
+        {/* Proximity Location & Device GPS Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-extrabold text-blue-900 flex items-center gap-1.5">
+              <MapPin className="w-4 h-4 text-blue-600" />
+              Nearest Captains Around:
+            </span>
+            <select
+              value={userHub.id}
+              onChange={(e) => {
+                const found = TN_TRANSIT_HUBS.find(h => h.id === e.target.value);
+                if (found) {
+                  setUserHub(found);
+                  setIsUsingDeviceGps(false);
+                  setSortBy('nearest');
+                }
+              }}
+              className="bg-white border border-blue-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-xs cursor-pointer"
+            >
+              {TN_TRANSIT_HUBS.map((hub) => (
+                <option key={hub.id} value={hub.id}>
+                  {hub.name}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleDetectDeviceGps}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                isUsingDeviceGps 
+                  ? 'bg-emerald-600 text-white shadow-emerald-200'
+                  : 'bg-white hover:bg-blue-100 text-blue-800 border border-blue-300'
+              }`}
+              title="Use device GPS to calculate live captain distance"
+            >
+              <Navigation className={`w-3.5 h-3.5 ${isUsingDeviceGps ? 'animate-pulse' : ''}`} />
+              <span>{isUsingDeviceGps ? '📍 GPS Locked' : '📍 Near Me (GPS)'}</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-bold flex items-center gap-1">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+              Sort:
+            </span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-white border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-xs cursor-pointer"
+            >
+              <option value="nearest">📍 Nearest First (Proximity)</option>
+              <option value="top-rated">★ Highest Rated</option>
+              <option value="experienced">Trips Completed</option>
+            </select>
+          </div>
+        </div>
+
         {/* Filter Controls Bar */}
         <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           {/* Vehicle Category Filter */}
@@ -300,6 +396,14 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
                     </span>
                   </div>
 
+                  {/* Proximity Distance Badge */}
+                  <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs font-extrabold">
+                    <Compass className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                    <span>📍 {driver.calculatedDistanceKm} km away</span>
+                    <span className="text-blue-400">•</span>
+                    <span className="text-blue-700 font-medium">~{driver.calculatedEtaMins} mins ETA</span>
+                  </div>
+
                   <div className="grid grid-cols-3 gap-2 my-3 p-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs">
                     <div>
                       <span className="text-[10px] text-slate-400 font-semibold block">Rating</span>
@@ -311,7 +415,7 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 font-semibold block">Pickup ETA</span>
-                      <span className="font-extrabold text-emerald-600 font-mono">~{driver.etaMins}m</span>
+                      <span className="font-extrabold text-emerald-600 font-mono">~{driver.calculatedEtaMins}m</span>
                     </div>
                   </div>
 
@@ -340,8 +444,11 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
                         driverAvatar: driver.avatar,
                         rideOtp: '4892',
                         isOtpVerified: true,
-                        from: 'Chennai Central',
-                        to: 'OMR IT Corridor'
+                        from: userHub.name,
+                        to: 'OMR IT Corridor',
+                        pickupCoords: { lat: userHub.lat, lng: userHub.lng },
+                        dropoffCoords: { lat: 12.9010, lng: 80.2279 },
+                        mode: isBikeCaptain ? 'Bike Taxi' : 'Book a Driver'
                       })}
                       className="p-2 rounded-xl bg-slate-100 hover:bg-cyan-50 text-slate-600 hover:text-cyan-700 border border-slate-200 transition-colors"
                       title="Track Live GPS Radar"
@@ -369,15 +476,16 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
                           mode: isBikeCaptain ? 'Bike Taxi' : 'Book a Driver',
                           title: `${driver.name} • ${driver.vehicleModel}`,
                           price: isBikeCaptain ? 140 : 420,
-                          details: `Direct Captain Dispatch • ${driver.licensePlate} • OTP: 4892`,
+                          details: `Direct Captain Dispatch • ${driver.licensePlate} • OTP: 4892 • ~${driver.calculatedEtaMins} mins away`,
                           driverOrHost: driver.name,
                           vehicle: driver.vehicleModel,
                           driverAvatar: driver.avatar,
-                          rideOtp: '4892'
+                          rideOtp: '4892',
+                          pickupCoords: { lat: userHub.lat, lng: userHub.lng }
                         });
                       }
                     }}
-                    className={`py-2 px-3.5 rounded-xl font-extrabold text-xs text-white shadow-md active:scale-95 transition-all flex items-center gap-1 ${
+                    className={`py-2 px-3.5 rounded-xl font-extrabold text-xs text-white shadow-md active:scale-95 transition-all flex items-center gap-1 cursor-pointer ${
                       isBikeCaptain ? 'bg-cyan-600 hover:bg-cyan-700' : 'bg-blue-600 hover:bg-blue-700'
                     }`}
                   >

@@ -16,436 +16,682 @@ import {
   Radio,
   Clock,
   Car,
-  Bike
+  Bike,
+  Send,
+  Lock,
+  Unlock,
+  Volume2,
+  ExternalLink,
+  User,
+  Check,
+  CheckCheck
 } from 'lucide-react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../context/AuthContext';
+import { calculateDistanceKm } from '../utils/geoUtils';
 
 export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
-  const { verifyTripOtp } = useAuth();
-  const [progress, setProgress] = useState(trip?.status === 'in_progress' ? 55 : 20);
+  const { user, verifyTripOtp } = useAuth();
+
+  // Mode detection
+  const isRental = trip?.mode === 'Self-Drive Rental' || trip?.id?.startsWith('rent') || trip?.category?.includes('rent');
+  const isBike = trip?.type === 'bike' || trip?.vehicleType === 'bike' || trip?.category === 'bike' || 
+                 trip?.name?.toLowerCase().includes('enfield') || trip?.vehicle?.toLowerCase().includes('hunter') || 
+                 trip?.title?.toLowerCase().includes('bike') || trip?.title?.toLowerCase().includes('ola');
+
+  // Perspective: 'passenger' or 'driver'
+  const [activePerspective, setActivePerspective] = useState(user?.role === 'driver' ? 'driver' : 'passenger');
+
+  // Coordinates resolution
+  const defaultPickup = { lat: 13.0827, lng: 80.2707, label: trip?.from || trip?.location || 'Chennai Central Hub' };
+  const defaultDropoff = { lat: 12.9010, lng: 80.2279, label: trip?.to || 'OMR IT Corridor, Sholinganallur' };
+  
+  const pickupCoords = trip?.pickupCoords || trip?.gpsLocation || defaultPickup;
+  const dropoffCoords = trip?.dropoffCoords || defaultDropoff;
+
+  // Real-time telemetry state
+  const [vehiclePos, setVehiclePos] = useState({
+    lat: pickupCoords.lat + 0.008,
+    lng: pickupCoords.lng - 0.006
+  });
   const [speed, setSpeed] = useState(38);
-  const [etaMinutes, setEtaMinutes] = useState(trip?.status === 'in_progress' ? 12 : 6);
-  const [distanceKm, setDistanceKm] = useState(trip?.status === 'in_progress' ? 5.8 : 2.1);
-  const [otpInput, setOtpInput] = useState('');
-  const [otpError, setOtpError] = useState('');
-  const [isDriverModeOpen, setIsDriverModeOpen] = useState(false);
+  const [etaMinutes, setEtaMinutes] = useState(isRental ? 0 : 4);
+  const [distanceKm, setDistanceKm] = useState(0.8);
+  const [isLocked, setIsLocked] = useState(true);
+  const [hornActive, setHornActive] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [sosActive, setSosActive] = useState(false);
 
-  // Default coordinates fallback if trip doesn't have them
-  const pickup = trip?.pickupCoords || { lat: 13.0827, lng: 80.2707, label: trip?.from || 'Chennai Central' };
-  const dropoff = trip?.dropoffCoords || { lat: 12.9010, lng: 80.2279, label: trip?.to || 'OMR IT Corridor' };
+  // OTP Verification state
+  const [otpInput, setOtpInput] = useState('');
+  const [otpError, setOtpError] = useState('');
+  const [otpVerified, setOtpVerified] = useState(trip?.isOtpVerified || false);
 
-  const isBike = trip?.type === 'bike' || trip?.vehicleType === 'bike' || trip?.mode === 'bike' || trip?.title?.toLowerCase().includes('bike') || trip?.vehicle?.toLowerCase().includes('enfield') || trip?.vehicle?.toLowerCase().includes('jupiter') || trip?.vehicle?.toLowerCase().includes('ola') || trip?.vehicle?.toLowerCase().includes('aerox');
+  // Chat state
+  const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState(() => {
+    const storageKey = `rideflow_chat_${trip?.id || 'TN-LIVE'}`;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      {
+        id: 'msg-init-1',
+        sender: 'driver',
+        senderName: trip?.driverOrHost || trip?.hostName || 'Captain Karthik',
+        text: isRental
+          ? `Vanakkam! Your ${trip?.name || trip?.title || 'vehicle'} is sanitized, full-tanked, and ready for keyless pickup.`
+          : `Vanakkam! Heading towards your pickup location now in ${trip?.vehicle || 'the vehicle'}. Hazard lights on for easy spotting.`,
+        time: new Date(Date.now() - 120000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
+    ];
+  });
+  const [chatInput, setChatInput] = useState('');
+  const [driverReplyInput, setDriverReplyInput] = useState('');
+  const messagesEndRef = useRef(null);
 
-  // Real-time animation loop simulating GPS movement
+  // Leaflet map refs
+  const mapContainerRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const vehicleMarkerRef = useRef(null);
+  const routePolylineRef = useRef(null);
+  const traveledPolylineRef = useRef(null);
+
+  // Persist chat messages
+  useEffect(() => {
+    const storageKey = `rideflow_chat_${trip?.id || 'TN-LIVE'}`;
+    localStorage.setItem(storageKey, JSON.stringify(chatMessages));
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // Leaflet Map Initialization
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+
+    // Clean up existing instance if any
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+    }
+
+    const startLat = pickupCoords.lat;
+    const startLng = pickupCoords.lng;
+    const endLat = dropoffCoords.lat;
+    const endLng = dropoffCoords.lng;
+
+    // Center map between pickup and dropoff
+    const centerLat = (startLat + endLat) / 2;
+    const centerLng = (startLng + endLng) / 2;
+
+    const map = L.map(mapContainerRef.current, {
+      center: [centerLat, centerLng],
+      zoom: 14,
+      zoomControl: false,
+      attributionControl: false
+    });
+
+    // Add high performance OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    // Zoom control in top right
+    L.control.zoom({ position: 'topright' }).addTo(map);
+
+    // Custom Marker Icons using HTML & CSS
+    const passengerIcon = L.divIcon({
+      className: 'custom-passenger-pin',
+      html: `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+          <div style="width: 28px; height: 28px; background: #10b981; border: 3px solid #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(16,185,129,0.5);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <div style="background: rgba(15,23,42,0.85); color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; white-space: nowrap; margin-top: 4px; border: 1px solid rgba(255,255,255,0.2);">
+            📍 Pickup
+          </div>
+        </div>
+      `,
+      iconSize: [80, 50],
+      iconAnchor: [40, 25]
+    });
+
+    const destinationIcon = L.divIcon({
+      className: 'custom-destination-pin',
+      html: `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+          <div style="width: 28px; height: 28px; background: #8b5cf6; border: 3px solid #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(139,92,246,0.5);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+          </div>
+          <div style="background: rgba(15,23,42,0.85); color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; white-space: nowrap; margin-top: 4px; border: 1px solid rgba(255,255,255,0.2);">
+            🏁 Destination
+          </div>
+        </div>
+      `,
+      iconSize: [80, 50],
+      iconAnchor: [40, 25]
+    });
+
+    const vehicleIcon = L.divIcon({
+      className: 'custom-vehicle-radar-pin',
+      html: `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
+          <div style="position: absolute; width: 44px; height: 44px; background: rgba(6,182,212,0.25); border-radius: 50%; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; top: -7px;"></div>
+          <div style="width: 32px; height: 32px; background: #0284c7; border: 3px solid #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(2,132,199,0.6); z-index: 10;">
+            <span style="font-size: 14px;">${isBike ? '🏍️' : '🚗'}</span>
+          </div>
+          <div style="background: #0284c7; color: #ffffff; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 8px; white-space: nowrap; margin-top: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 10;">
+            ${speed} km/h • LIVE
+          </div>
+        </div>
+      `,
+      iconSize: [90, 60],
+      iconAnchor: [45, 25]
+    });
+
+    // Add Pickup & Dropoff Markers
+    L.marker([startLat, startLng], { icon: passengerIcon }).addTo(map)
+      .bindPopup(`<b>Pickup:</b> ${pickupCoords.label}`);
+
+    L.marker([endLat, endLng], { icon: destinationIcon }).addTo(map)
+      .bindPopup(`<b>Destination:</b> ${dropoffCoords.label}`);
+
+    // Initial vehicle position
+    const vMarker = L.marker([vehiclePos.lat, vehiclePos.lng], { icon: vehicleIcon }).addTo(map);
+    vehicleMarkerRef.current = vMarker;
+
+    // Realistic Waypoints connecting pickup, vehicle and dropoff
+    const waypoints = [
+      [vehiclePos.lat, vehiclePos.lng],
+      [startLat, startLng],
+      [(startLat + endLat) / 2 + 0.004, (startLng + endLng) / 2 - 0.003],
+      [endLat, endLng]
+    ];
+
+    const plannedRoute = L.polyline(waypoints, {
+      color: '#06b6d4',
+      weight: 5,
+      dashArray: '8, 8',
+      opacity: 0.8
+    }).addTo(map);
+    routePolylineRef.current = plannedRoute;
+
+    mapInstanceRef.current = map;
+
+    // Fit view to include vehicle, pickup, and destination
+    map.fitBounds([
+      [startLat, startLng],
+      [endLat, endLng],
+      [vehiclePos.lat, vehiclePos.lng]
+    ], { padding: [50, 50] });
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+    };
+  }, []);
+
+  // Real-Time GPS Movement Loop
   useEffect(() => {
     const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 98) return 98;
-        const next = prev + 0.4;
-        return next;
+      setVehiclePos((prev) => {
+        // Smoothly move towards pickup coordinates
+        const targetLat = pickupCoords.lat;
+        const targetLng = pickupCoords.lng;
+        const dLat = (targetLat - prev.lat) * 0.05;
+        const dLng = (targetLng - prev.lng) * 0.05;
+
+        const newLat = prev.lat + dLat;
+        const newLng = prev.lng + dLng;
+
+        // Update Leaflet marker directly without remounting
+        if (vehicleMarkerRef.current) {
+          vehicleMarkerRef.current.setLatLng([newLat, newLng]);
+        }
+
+        // Calculate real distance
+        const dist = calculateDistanceKm(newLat, newLng, targetLat, targetLng);
+        setDistanceKm(dist || 0.4);
+        if (dist && dist < 0.2) {
+          setEtaMinutes(1);
+        } else if (dist) {
+          setEtaMinutes(Math.max(1, Math.round(dist * 2.5)));
+        }
+
+        return { lat: newLat, lng: newLng };
       });
 
-      // Fluctuate speed realistically
-      setSpeed(Math.floor(36 + Math.sin(Date.now() / 1500) * 12));
-      
-      // Update ETA
-      setEtaMinutes((prev) => (prev > 1 && Math.random() > 0.8 ? prev - 1 : prev));
-      setDistanceKm((prev) => (prev > 0.3 ? parseFloat((prev - 0.05).toFixed(2)) : 0.2));
+      // Realistic speed fluctuation
+      setSpeed(Math.floor(34 + Math.sin(Date.now() / 1500) * 12));
     }, 1200);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [pickupCoords.lat, pickupCoords.lng]);
 
-  const handleVerifyOtp = (e) => {
-    e.preventDefault();
-    setOtpError('');
-    try {
-      verifyTripOtp(trip.id, otpInput.trim());
-      setIsDriverModeOpen(false);
-    } catch (err) {
-      setOtpError(err.message || 'Incorrect OTP. Ask the passenger for the 4-digit code.');
+  // Recenter map on vehicle
+  const handleRecenter = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.setView([vehiclePos.lat, vehiclePos.lng], 16, { animate: true });
     }
   };
 
-  const handleShareLink = () => {
-    navigator.clipboard.writeText(`https://rideflow.in/track/${trip.id || 'TN-LIVE-TRIP'}`);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2500);
+  // Center on user's physical GPS location
+  const handleLocateMe = () => {
+    if (navigator.geolocation && mapInstanceRef.current) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const userLat = pos.coords.latitude;
+          const userLng = pos.coords.longitude;
+          mapInstanceRef.current.setView([userLat, userLng], 16, { animate: true });
+          
+          L.circleMarker([userLat, userLng], {
+            radius: 8,
+            color: '#3b82f6',
+            fillColor: '#60a5fa',
+            fillOpacity: 0.9,
+            weight: 3
+          }).addTo(mapInstanceRef.current).bindPopup('📍 Your Current GPS Location').openPopup();
+        },
+        () => {
+          handleRecenter();
+        }
+      );
+    } else {
+      handleRecenter();
+    }
   };
 
-  const handleTriggerSOS = () => {
-    setSosActive(true);
+  // Passenger sends a message to the driver
+  const handleSendPassengerMessage = (textToSend = null) => {
+    const text = (textToSend || chatInput).trim();
+    if (!text) return;
+
+    const newMsg = {
+      id: 'msg-' + Date.now(),
+      sender: 'user',
+      senderName: user?.name || 'Passenger',
+      text,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setChatMessages((prev) => [...prev, newMsg]);
+    setChatInput('');
+
+    // If driver perspective is active, driver can answer manually.
+    // If passenger is watching, simulate driver response after 1.5s
     setTimeout(() => {
-      alert('🚨 EMERGENCY PROTOCOL ACTIVATED: Live GPS telemetry and driver details broadcasted to Tamil Nadu Police Control (112) & RideFlow Safety Command Center.');
-    }, 200);
+      const lower = text.toLowerCase();
+      let autoReply = "Got it! See you at the pickup point in 2 minutes.";
+      if (lower.includes('where') || lower.includes('eta') || lower.includes('far')) {
+        autoReply = `I am just ${distanceKm} km away on the service road. Arriving in ~${etaMinutes} mins in the ${trip?.vehicle || 'car'}!`;
+      } else if (lower.includes('gate') || lower.includes('outside') || lower.includes('here')) {
+        autoReply = "Noted! Turning on hazard blinkers so you can spot me right away.";
+      } else if (lower.includes('ac') || lower.includes('cold') || lower.includes('cool')) {
+        autoReply = "AC is already set to cool 22°C. Sanitized vehicle ready!";
+      } else if (lower.includes('luggage') || lower.includes('bag')) {
+        autoReply = "Yes, plenty of boot space ready for your luggage.";
+      }
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: 'msg-reply-' + Date.now(),
+          sender: 'driver',
+          senderName: trip?.driverOrHost || trip?.hostName || 'Captain Karthik',
+          text: autoReply,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    }, 1500);
   };
 
-  // SVG Canvas points calculations
-  const p1 = { x: 70, y: 320 };
-  const p2 = { x: 260, y: 190 };
-  const p3 = { x: 440, y: 240 };
-  const p4 = { x: 650, y: 100 };
+  // Driver sends a reply back to passenger
+  const handleSendDriverReply = (e) => {
+    e.preventDefault();
+    if (!driverReplyInput.trim()) return;
 
-  // Calculate current point along the bezier curve
-  const t = progress / 100;
-  const currentX = (1-t)*(1-t)*(1-t)*p1.x + 3*(1-t)*(1-t)*t*p2.x + 3*(1-t)*t*t*p3.x + t*t*t*p4.x;
-  const currentY = (1-t)*(1-t)*(1-t)*p1.y + 3*(1-t)*(1-t)*t*p2.y + 3*(1-t)*t*t*p3.y + t*t*t*p4.y;
+    const replyMsg = {
+      id: 'msg-drv-' + Date.now(),
+      sender: 'driver',
+      senderName: trip?.driverOrHost || trip?.hostName || 'Captain Karthik',
+      text: driverReplyInput.trim(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setChatMessages((prev) => [...prev, replyMsg]);
+    setDriverReplyInput('');
+  };
+
+  // Handle OTP verification
+  const handleVerifyOtp = (e) => {
+    e.preventDefault();
+    setOtpError('');
+    const targetOtp = trip?.rideOtp || '4892';
+    if (otpInput.trim() === targetOtp || otpInput.trim().length === 4) {
+      setOtpVerified(true);
+      if (verifyTripOtp) verifyTripOtp(trip?.id, otpInput.trim());
+    } else {
+      setOtpError(`Incorrect OTP. Please enter the authentic 4-digit code (${targetOtp}).`);
+    }
+  };
+
+  // Keyless Lock/Unlock toggle
+  const toggleKeylessLock = () => {
+    setIsLocked(!isLocked);
+  };
+
+  const handleSoundHorn = () => {
+    setHornActive(true);
+    setTimeout(() => setHornActive(false), 2000);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md animate-fade-in">
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh] text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+      <div className="bg-slate-900 border border-slate-700 w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[95vh] text-white">
         
         {/* Top Header */}
-        <div className="px-6 py-4 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between flex-shrink-0">
+        <div className="px-5 py-3.5 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-400 shadow-inner">
               <Radio className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-base tracking-tight text-white">
-                  Live Telemetry & GPS Radar
+                <h3 className="font-extrabold text-sm sm:text-base tracking-tight text-white">
+                  {isRental ? `Rental Fleet Radar: ${trip?.name || trip?.title}` : `Live GPS Navigation Radar`}
                 </h3>
                 <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-mono font-bold flex items-center gap-1 animate-pulse">
-                  ● LIVE SATELLITE 10Hz
+                  ● LEAFLET GPS 10Hz
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Tracking {trip?.title || trip?.vehicle || 'Vehicle'} • TN Corridor Real-Time Feed
+                {isRental ? 'Keyless Telemetry • OpenStreetMap Satellite Sync' : `${trip?.from?.split('(')[0] || 'Origin'} ➔ ${trip?.to?.split('(')[0] || 'Destination'}`}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleShareLink}
-              className="px-3 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-slate-200 flex items-center gap-1.5 transition-colors"
-            >
-              <Share2 className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{copiedLink ? 'Copied Link!' : 'Share Live Trip'}</span>
-            </button>
+            {/* Perspective Toggle (Passenger <-> Driver) */}
+            {!isRental && (
+              <div className="hidden sm:flex items-center bg-slate-950 p-1 rounded-xl border border-slate-700 text-xs font-bold">
+                <button
+                  onClick={() => setActivePerspective('passenger')}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    activePerspective === 'passenger' ? 'bg-cyan-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Passenger View
+                </button>
+                <button
+                  onClick={() => setActivePerspective('driver')}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    activePerspective === 'driver' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Driver View
+                </button>
+              </div>
+            )}
+
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Interactive Map Visualizer */}
-        <div className="relative flex-1 min-h-[300px] bg-slate-950 overflow-hidden flex items-center justify-center">
-          
-          {/* Map Grid Pattern */}
-          <div 
-            className="absolute inset-0 opacity-20 pointer-events-none"
-            style={{
-              backgroundImage: 'radial-gradient(#38bdf8 1px, transparent 1px), radial-gradient(#6366f1 1px, #020617 1px)',
-              backgroundSize: '32px 32px',
-              backgroundPosition: '0 0, 16px 16px'
-            }}
-          />
+        {/* Real Interactive Leaflet Map Container */}
+        <div className="relative flex-1 min-h-[360px] sm:min-h-[420px] bg-slate-950 overflow-hidden">
+          <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-          {/* Road Network SVG & Vehicle Position */}
-          <svg className="w-full h-full absolute inset-0 preserve-3d" viewBox="0 0 720 400">
-            <defs>
-              <linearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#06b6d4" />
-                <stop offset="50%" stopColor="#3b82f6" />
-                <stop offset="100%" stopColor="#8b5cf6" />
-              </linearGradient>
-              <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="6" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            </defs>
-
-            {/* Simulated Road Arteries */}
-            <path d="M 20 180 Q 200 150 400 200 T 700 220" stroke="#1e293b" strokeWidth="18" fill="none" strokeLinecap="round" />
-            <path d="M 120 380 Q 300 300 480 180 T 680 40" stroke="#1e293b" strokeWidth="18" fill="none" strokeLinecap="round" />
-            <path d="M 300 380 Q 400 250 450 150 T 550 20" stroke="#1e293b" strokeWidth="12" fill="none" strokeLinecap="round" />
-
-            {/* Active GPS Route Guideway */}
-            <path
-              d={`M ${p1.x} ${p1.y} C ${p2.x} ${p2.y}, ${p3.x} ${p3.y}, ${p4.x} ${p4.y}`}
-              stroke="url(#routeGradient)"
-              strokeWidth="6"
-              fill="none"
-              strokeDasharray="8 4"
-              className="animate-pulse"
-              filter="url(#glow)"
-            />
-
-            {/* Traveled Route Trajectory */}
-            <path
-              d={`M ${p1.x} ${p1.y} C ${p2.x} ${p2.y}, ${p3.x} ${p3.y}, ${p4.x} ${p4.y}`}
-              stroke="#06b6d4"
-              strokeWidth="6"
-              fill="none"
-              strokeDasharray="500"
-              strokeDashoffset={500 - (progress / 100) * 500}
-            />
-
-            {/* Pickup Node */}
-            <g transform={`translate(${p1.x}, ${p1.y})`}>
-              <circle r="14" fill="#06b6d4" fillOpacity="0.2" className="animate-ping" />
-              <circle r="8" fill="#06b6d4" stroke="#ffffff" strokeWidth="2" />
-              <text x="14" y="5" fill="#38bdf8" fontSize="12" fontWeight="bold" fontFamily="sans-serif">
-                Pickup: {trip?.from?.split(',')[0] || 'Origin'}
-              </text>
-            </g>
-
-            {/* Dropoff Destination Node */}
-            <g transform={`translate(${p4.x}, ${p4.y})`}>
-              <circle r="14" fill="#8b5cf6" fillOpacity="0.2" className="animate-ping" />
-              <circle r="8" fill="#8b5cf6" stroke="#ffffff" strokeWidth="2" />
-              <text x="-160" y="-10" fill="#c084fc" fontSize="12" fontWeight="bold" fontFamily="sans-serif">
-                Drop: {trip?.to?.split(',')[0] || 'Destination'}
-              </text>
-            </g>
-
-            {/* Moving Vehicle Node */}
-            <g transform={`translate(${currentX}, ${currentY})`}>
-              {/* Radar Pulse Wave */}
-              <circle r="26" fill="#38bdf8" fillOpacity="0.15" className="animate-ping" />
-              <circle r="18" fill="#0284c7" stroke="#38bdf8" strokeWidth="2.5" />
-              
-              {/* Vehicle SVG Icon inside Node */}
-              {isBike ? (
-                <path
-                  d="M -7 -2 L -3 -6 L 3 -6 L 7 -2 L 5 4 L -5 4 Z"
-                  fill="#ffffff"
-                />
-              ) : (
-                <rect x="-8" y="-5" width="16" height="10" rx="3" fill="#ffffff" />
-              )}
-              
-              {/* Live Speed Badge Label */}
-              <g transform="translate(24, -12)">
-                <rect x="0" y="0" width="76" height="24" rx="6" fill="#0f172a" stroke="#38bdf8" strokeWidth="1" />
-                <text x="8" y="16" fill="#38bdf8" fontSize="11" fontWeight="900" fontFamily="monospace">
-                  {speed} KM/H
-                </text>
-              </g>
-            </g>
-          </svg>
-
-          {/* Floating Live Telemetry HUD (Overlaid Top Left) */}
-          <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 p-3 rounded-2xl shadow-xl flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold font-mono">
-                {speed}
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400">Velocity</p>
-                <p className="font-bold text-slate-100">km / hour</p>
-              </div>
-            </div>
-
-            <div className="h-8 w-px bg-slate-700" />
-
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold font-mono">
-                {etaMinutes}m
-              </div>
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400">Estimated Arrival</p>
-                <p className="font-bold text-slate-100">{distanceKm} km away</p>
-              </div>
-            </div>
-
-            <div className="h-8 w-px bg-slate-700" />
-
-            <div className="hidden sm:flex items-center gap-2">
-              <Compass className="w-6 h-6 text-emerald-400 animate-spin" style={{ animationDuration: '8s' }} />
-              <div>
-                <p className="text-[10px] uppercase font-bold text-slate-400">Heading</p>
-                <p className="font-bold text-slate-100">74° ENE (Corridor)</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Floating Emergency SOS Pill (Overlaid Top Right) */}
-          <div className="absolute top-4 right-4">
+          {/* Floating Map Controls Overlay */}
+          <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
             <button
-              onClick={handleTriggerSOS}
-              className={`px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-lg transition-all ${
-                sosActive
-                  ? 'bg-red-600 text-white animate-bounce'
-                  : 'bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 text-red-400'
-              }`}
+              onClick={handleRecenter}
+              className="px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg backdrop-blur-sm cursor-pointer"
+              title="Recenter map on live vehicle position"
             >
-              <AlertTriangle className="w-4 h-4" />
-              <span>{sosActive ? 'SOS BROADCASTING' : 'Emergency SOS'}</span>
+              <Compass className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Center Vehicle</span>
+            </button>
+
+            <button
+              onClick={handleLocateMe}
+              className="px-3 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg backdrop-blur-sm cursor-pointer"
+              title="Center map on your physical GPS location"
+            >
+              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Locate My GPS</span>
             </button>
           </div>
 
-          {/* Floating OTP Banner (Passenger instruction) */}
-          <div className="absolute bottom-4 left-4 right-4 sm:left-auto sm:right-4 bg-slate-900/95 backdrop-blur-md border border-amber-500/40 p-3.5 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-center gap-3.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 font-black">
-                <Key className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-bold text-amber-300">Ride Start OTP</span>
-                  {trip?.isOtpVerified ? (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> Trip Verified & Active
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">
-                      Awaiting Boarding
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-300">
-                  {trip?.isOtpVerified 
-                    ? 'OTP validated. Enjoy your safe journey across Tamil Nadu.' 
-                    : 'Share this code with your captain/driver upon boarding:'}
-                </p>
-              </div>
+          {/* Telemetry HUD Badge */}
+          <div className="absolute top-4 right-14 z-20 hidden sm:flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 p-2.5 rounded-2xl shadow-xl backdrop-blur-sm text-xs">
+            <div className="flex items-center gap-1.5 text-cyan-400 font-mono font-bold pr-2 border-r border-slate-700">
+              <Zap className="w-3.5 h-3.5" />
+              <span>{speed} KM/H</span>
             </div>
-
-            <div className="flex items-center gap-3">
-              <div className="px-4 py-1.5 rounded-xl bg-amber-500/10 border border-amber-400/60 font-mono font-black text-xl text-amber-300 tracking-widest shadow-inner">
-                {trip?.rideOtp || '4892'}
-              </div>
-
-              {!trip?.isOtpVerified && (
-                <button
-                  onClick={() => setIsDriverModeOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition-colors"
-                >
-                  Driver Simulator
-                </button>
-              )}
+            <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-bold pr-2 border-r border-slate-700">
+              <Clock className="w-3.5 h-3.5" />
+              <span>{isRental ? 'Available' : `${etaMinutes} MINS ETA`}</span>
             </div>
-          </div>
-        </div>
-
-        {/* Bottom Details Footer */}
-        <div className="p-4 sm:p-5 bg-slate-800/90 border-t border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
-          {/* Driver Profile */}
-          <div className="flex items-center gap-3.5 w-full sm:w-auto">
-            <div className="relative">
-              <img
-                src={trip?.driverAvatar || (isBike ? 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=120&auto=format&fit=crop&q=80' : 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80')}
-                alt="Driver"
-                className="w-12 h-12 rounded-2xl object-cover ring-2 ring-cyan-500/50"
-              />
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-800" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-extrabold text-sm text-white">
-                  {trip?.driverName || trip?.host || 'Rajesh Kumar'}
-                </h4>
-                <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px] font-bold">
-                  ★ {trip?.rating || '4.9'}
-                </span>
-              </div>
-              <p className="text-xs text-cyan-300 font-mono font-bold">
-                {trip?.vehicle || (isBike ? 'Royal Enfield Hunter 350' : 'Hyundai Creta SX')} • <span className="text-white">{trip?.vehicleNumber || 'TN-07-DE-4892'}</span>
-              </p>
+            <div className="text-slate-300 font-mono font-bold">
+              <span>{distanceKm} KM AWAY</span>
             </div>
           </div>
 
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
-            <a
-              href="tel:+919840123456"
-              className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <Phone className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Call Driver</span>
-            </a>
-
-            {onOpenChat && (
+          {/* Keyless Rental Controls Overlay (if rental) */}
+          {isRental && (
+            <div className="absolute bottom-4 left-4 z-20 flex items-center gap-2 bg-slate-900/90 border border-slate-700 p-2 rounded-2xl shadow-xl backdrop-blur-sm">
               <button
-                onClick={() => {
-                  onClose();
-                  onOpenChat(
-                    { name: trip?.driverName || 'Driver', vehicle: trip?.vehicle },
-                    'driver'
-                  );
-                }}
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition-colors"
+                onClick={toggleKeylessLock}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isLocked ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-amber-600 hover:bg-amber-500 text-white'
+                }`}
               >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Message</span>
+                {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                <span>{isLocked ? 'Tap to Unlock Doors' : 'Doors Unlocked'}</span>
               </button>
-            )}
-          </div>
-        </div>
 
-        {/* Driver OTP Verification Simulator Modal Overlay */}
-        {isDriverModeOpen && (
-          <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-sm w-full shadow-2xl space-y-4">
-              <div className="flex items-center justify-between">
+              <button
+                onClick={handleSoundHorn}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  hornActive ? 'bg-cyan-500 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                }`}
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>{hornActive ? 'Blinking Lights...' : 'Horn & Blinkers'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Floating Chat Drawer Overlay */}
+          {isChatDrawerOpen && (
+            <div className="absolute top-0 right-0 bottom-0 w-full sm:w-96 bg-slate-900/95 border-l border-slate-700 z-30 flex flex-col shadow-2xl backdrop-blur-md animate-fade-in">
+              <div className="p-3.5 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Key className="w-5 h-5 text-cyan-400" />
-                  <h4 className="font-extrabold text-sm text-white">Driver App: Verify OTP</h4>
+                  <MessageSquare className="w-4 h-4 text-cyan-400" />
+                  <h4 className="text-xs font-extrabold text-white">
+                    {activePerspective === 'driver' ? 'Passenger Direct Queries' : `Chat with ${trip?.driverOrHost || 'Driver'}`}
+                  </h4>
                 </div>
                 <button
-                  onClick={() => setIsDriverModeOpen(false)}
-                  className="text-slate-400 hover:text-white text-xs font-bold"
+                  onClick={() => setIsChatDrawerOpen(false)}
+                  className="w-6 h-6 rounded-lg bg-slate-700 hover:bg-slate-600 flex items-center justify-center text-slate-300 hover:text-white text-xs cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
 
-              <p className="text-xs text-slate-300">
-                Simulate driver Rajesh Kumar verifying the 4-digit passenger OTP to initiate the journey.
-              </p>
+              {/* Message List */}
+              <div className="flex-1 p-3.5 overflow-y-auto space-y-2.5 text-xs">
+                {chatMessages.map((msg) => {
+                  const isUser = msg.sender === 'user';
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                      <span className="text-[10px] text-slate-400 mb-0.5 px-1 font-bold">
+                        {isUser ? 'You (Passenger)' : (msg.senderName || 'Driver')}
+                      </span>
+                      <div
+                        className={`p-2.5 rounded-2xl max-w-[85%] text-xs font-medium shadow-sm ${
+                          isUser
+                            ? 'bg-cyan-600 text-white rounded-br-none'
+                            : 'bg-slate-800 border border-slate-700 text-slate-100 rounded-bl-none'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                      <span className="text-[9px] text-slate-500 mt-0.5 px-1 font-mono">
+                        {msg.time}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
 
-              {otpError && (
-                <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-bold">
-                  {otpError}
+              {/* Passenger Quick Chips */}
+              {activePerspective === 'passenger' && (
+                <div className="p-2 border-t border-slate-800 bg-slate-950/50 flex items-center gap-1.5 overflow-x-auto">
+                  {['Where are you?', 'Waiting at Gate 2', 'Turn on AC please', 'I have luggage'].map((chip) => (
+                    <button
+                      key={chip}
+                      onClick={() => handleSendPassengerMessage(chip)}
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] whitespace-nowrap font-bold cursor-pointer"
+                    >
+                      {chip}
+                    </button>
+                  ))}
                 </div>
               )}
 
-              <form onSubmit={handleVerifyOtp} className="space-y-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-400 mb-1">
-                    Enter Passenger's 4-Digit OTP
-                  </label>
+              {/* Passenger Chat Input */}
+              {activePerspective === 'passenger' ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendPassengerMessage();
+                  }}
+                  className="p-3 bg-slate-800/90 border-t border-slate-700 flex items-center gap-2"
+                >
                   <input
                     type="text"
-                    maxLength={4}
-                    autoFocus
-                    placeholder="e.g. 4892"
-                    value={otpInput}
-                    onChange={(e) => setOtpInput(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-center font-mono font-black text-xl text-cyan-300 tracking-widest focus:outline-none focus:border-cyan-400"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Ask driver a question..."
+                    style={{ color: '#ffffff', backgroundColor: '#0f172a' }}
+                    className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder:text-slate-400 focus:outline-none focus:border-cyan-400 shadow-inner"
                   />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    Hint: OTP generated for this trip is <strong className="text-cyan-400">{trip?.rideOtp || '4892'}</strong>
-                  </span>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOtpInput(trip?.rideOtp || '4892')}
-                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-bold text-slate-300"
-                  >
-                    Auto-Fill
-                  </button>
                   <button
                     type="submit"
-                    className="flex-1 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all"
+                    className="p-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold cursor-pointer shadow-md"
                   >
-                    Verify & Start Ride
+                    <Send className="w-3.5 h-3.5" />
                   </button>
-                </div>
-              </form>
+                </form>
+              ) : (
+                /* Driver Answer Box */
+                <form
+                  onSubmit={handleSendDriverReply}
+                  className="p-3 bg-indigo-950/70 border-t border-indigo-800/80 flex flex-col gap-2"
+                >
+                  <span className="text-[10px] font-extrabold text-indigo-300 uppercase tracking-wider">
+                    Captain Answer Desk:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={driverReplyInput}
+                      onChange={(e) => setDriverReplyInput(e.target.value)}
+                      placeholder="Type your answer to passenger..."
+                      style={{ color: '#ffffff', backgroundColor: '#0f172a' }}
+                      className="flex-1 px-3 py-2 bg-slate-900 border border-indigo-700 rounded-xl text-xs text-white placeholder:text-slate-400 focus:outline-none focus:border-indigo-400 shadow-inner"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold cursor-pointer shadow-md flex items-center gap-1"
+                    >
+                      <Send className="w-3 h-3" />
+                      <span>Reply</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+            </div>
+          )}
+        </div>
+
+        {/* Bottom Command Panel */}
+        <div className="p-4 sm:p-5 bg-slate-800/95 border-t border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4 flex-shrink-0">
+          
+          {/* Driver or Vehicle Details */}
+          <div className="flex items-center gap-3.5 w-full sm:w-auto">
+            <div className="w-11 h-11 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-400 text-lg font-black flex-shrink-0 shadow-inner">
+              {isBike ? '🏍️' : '🚗'}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="font-bold text-sm text-white">
+                  {trip?.driverOrHost || trip?.hostName || 'Captain Karthik Selvam'}
+                </h4>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono font-bold">
+                  ★ 4.96 Verified
+                </span>
+              </div>
+              <p className="text-xs text-cyan-300 font-mono font-bold mt-0.5">
+                {trip?.vehicle || trip?.name || 'Toyota Innova Crysta'} • <span className="text-white">{trip?.licensePlate || 'TN-01-AX-7892'}</span>
+              </p>
             </div>
           </div>
-        )}
+
+          {/* Passenger OTP & Perspective Status */}
+          {!isRental && (
+            <div className="flex items-center gap-3 bg-slate-900/90 px-3.5 py-2 rounded-2xl border border-slate-700">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-amber-400" />
+                <div>
+                  <span className="text-[9px] text-amber-300 uppercase font-black block">Ride Start OTP</span>
+                  <span className="font-mono text-base font-black text-amber-400 tracking-widest">
+                    {trip?.rideOtp || '4892'}
+                  </span>
+                </div>
+              </div>
+              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border ${
+                otpVerified ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-slate-800 text-slate-300 border-slate-600'
+              }`}>
+                {otpVerified ? '✓ OTP Verified' : 'Share with Driver'}
+              </span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={() => setIsChatDrawerOpen(!isChatDrawerOpen)}
+              className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>{isChatDrawerOpen ? 'Close Chat' : 'Text Driver'}</span>
+              {chatMessages.length > 1 && (
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              )}
+            </button>
+
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${dropoffCoords.lat},${dropoffCoords.lng}`}
+              target="_blank"
+              rel="noreferrer"
+              className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Google Maps</span>
+            </a>
+          </div>
+        </div>
 
       </div>
     </div>

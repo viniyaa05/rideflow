@@ -159,6 +159,7 @@ function MainApp() {
             <Dashboard 
               setActiveTab={setActiveTab} 
               onQuickBookRoute={handleQuickBookRoute} 
+              onOpenChat={handleOpenChat}
             />
           )}
 
@@ -174,7 +175,7 @@ function MainApp() {
           {activeTab === 'rentals' && (
             <RentalsView 
               onBookRental={handleDirectBook}
-              onOpenChat={(car) => handleOpenChat(car, 'host')}
+              onOpenChat={(car) => handleOpenChat(car, 'rental')}
             />
           )}
 
@@ -201,7 +202,7 @@ function MainApp() {
           )}
 
           {activeTab === 'admin' && (
-            isAdminUser ? <AdminView /> : <Dashboard setActiveTab={setActiveTab} onQuickBookRoute={handleQuickBookRoute} />
+            isAdminUser ? <AdminView /> : <Dashboard setActiveTab={setActiveTab} onQuickBookRoute={handleQuickBookRoute} onOpenChat={handleOpenChat} />
           )}
         </main>
 

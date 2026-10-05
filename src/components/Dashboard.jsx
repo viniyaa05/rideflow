@@ -26,7 +26,8 @@ import {
   HelpCircle,
   ShieldAlert,
   Bike,
-  Bell
+  Bell,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -41,7 +42,7 @@ import SupportModal from './SupportModal';
 import { downloadTripReceipt } from '../utils/pdfReceipt';
 import { exportBookingsToCSV } from '../utils/exportBookings';
 
-export default function Dashboard({ setActiveTab, onQuickBookRoute }) {
+export default function Dashboard({ setActiveTab, onQuickBookRoute, onOpenChat }) {
   const { user, activeBookings, notifications, markNotificationAsRead, recentlyAccessed } = useAuth();
   const { currentThemeMeta } = useTheme();
   const { t } = useLanguage();
@@ -330,17 +331,35 @@ export default function Dashboard({ setActiveTab, onQuickBookRoute }) {
                       {!isCancelled && (
                         <button
                           onClick={() => setTrackingTrip(booking)}
-                          className="py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-2xs"
+                          className="py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
                         >
                           <Radio className="w-3.5 h-3.5 animate-pulse" />
                           <span>Track Live GPS</span>
                         </button>
                       )}
 
+                      {/* Text Driver / Host Direct Action */}
+                      {!isCancelled && onOpenChat && (
+                        <button
+                          onClick={() => onOpenChat({
+                            name: booking.driverOrHost?.split('(')[0]?.trim() || 'Captain',
+                            driverName: booking.driverOrHost?.split('(')[0]?.trim() || 'Captain',
+                            vehicle: booking.vehicle || booking.title,
+                            vehicleModel: booking.vehicle || booking.title,
+                            title: booking.title
+                          }, booking.mode === 'Self-Drive Rental' ? 'rental' : 'driver')}
+                          className="py-2 px-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                          title="Text Captain / Host"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>Chat</span>
+                        </button>
+                      )}
+
                       {/* PDF Receipt Download Button */}
                       <button
                         onClick={() => handleDownloadPDF(booking)}
-                        className="py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs"
+                        className="py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
                         title="Download Tax Invoice as PDF"
                       >
                         <Download className="w-3.5 h-3.5 text-slate-600" />
@@ -651,6 +670,7 @@ export default function Dashboard({ setActiveTab, onQuickBookRoute }) {
         <LiveTrackingModal
           trip={trackingTrip}
           onClose={() => setTrackingTrip(null)}
+          onOpenChat={onOpenChat}
         />
       )}
 

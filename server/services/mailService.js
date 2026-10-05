@@ -7,19 +7,31 @@ const EMAIL_USER = process.env.EMAIL_USER || process.env.GMAIL_USER || 'rideflow
 const EMAIL_PASS = process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || '';
 
 // Create reusable transporter
+let pooledTransporter = null;
+
 const createTransporter = () => {
   if (!EMAIL_PASS) {
     return null;
   }
 
-  // Gmail SMTP
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: EMAIL_USER,
-      pass: EMAIL_PASS.replace(/\s+/g, '') // strip any spaces if user copied with spaces
-    }
-  });
+  if (!pooledTransporter) {
+    pooledTransporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: EMAIL_USER,
+        pass: EMAIL_PASS.replace(/\s+/g, '')
+      },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      socketTimeout: 30000,
+      greetingTimeout: 20000
+    });
+  }
+
+  return pooledTransporter;
 };
 
 /**
@@ -130,3 +142,86 @@ export const sendPasswordResetEmail = async ({ to, userName, otp }) => {
     };
   }
 };
+
+/**
+ * Send Welcome Email to New Member
+ */
+export const sendWelcomeEmail = async ({ to, userName }) => {
+  if (!to || !to.includes('@')) {
+    return { sent: false, reason: 'invalid_email' };
+  }
+
+  const transporter = createTransporter();
+  if (!transporter) {
+    return { sent: false, reason: 'smtp_not_configured' };
+  }
+
+  const welcomeHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #0f172a; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 20px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+    .header { background: linear-gradient(135deg, #059669 0%, #0d9488 100%); padding: 32px 24px; text-align: center; color: #ffffff; }
+    .header h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+    .header p { margin: 6px 0 0; font-size: 13px; opacity: 0.9; }
+    .content { padding: 32px 28px; }
+    .greeting { font-size: 16px; font-weight: 700; color: #1e293b; margin-bottom: 12px; }
+    .text { font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 16px; }
+    .perks { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 14px; padding: 18px 20px; margin: 20px 0; }
+    .perk-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #166534; font-weight: 600; margin-bottom: 8px; }
+    .perk-item:last-child { margin-bottom: 0; }
+    .footer { padding: 20px 28px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; text-align: center; line-height: 1.5; }
+    .footer a { color: #0d9488; text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Vanakkam, Welcome to RideFlow! 🚀</h1>
+      <p>Tamil Nadu's Multi-Modal Smart Transit Network</p>
+    </div>
+    <div class="content">
+      <div class="greeting">Hello ${userName || 'RideFlow Member'},</div>
+      <p class="text">
+        Your RideFlow account is active and verified! Your account credentials and preferences have been registered in our database.
+      </p>
+      <div class="perks">
+        <div class="perk-item">✓ Real-time Leaflet GPS telemetry for passenger & driver</div>
+        <div class="perk-item">✓ Instant 2-way texting drawer with your assigned captain</div>
+        <div class="perk-item">✓ 24-vehicle self-drive fleet & rapid solo bike taxis across Tamil Nadu</div>
+        <div class="perk-item">✓ 4-digit Ride Start OTP protection and zero surge price guarantee</div>
+      </div>
+      <p class="text">
+        Whether commuting along the OMR IT corridor, booking a Thar for a weekend trip, or hailing a solo bike taxi, RideFlow has you covered.
+      </p>
+    </div>
+    <div class="footer">
+      Dispatched by <strong>RideFlow Member Services</strong><br>
+      Official Desk: <a href="mailto:${EMAIL_USER}">${EMAIL_USER}</a> • WhatsApp: +91 80728 32066<br>
+      Chennai Central (600003) to Coimbatore (641012)
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"RideFlow Member Services" <${EMAIL_USER}>`,
+      to,
+      subject: `🎉 Welcome to RideFlow Tamil Nadu, ${userName || 'Member'}!`,
+      text: `Vanakkam ${userName || 'Member'}! Welcome to RideFlow Tamil Nadu. Your account is active with real-time GPS tracking and 2-way driver texting.`,
+      html: welcomeHtml
+    });
+
+    console.log(`[MailService] Welcome email sent to ${to}! Message ID: ${info.messageId}`);
+    return { sent: true, messageId: info.messageId };
+  } catch (err) {
+    console.warn(`[MailService] Welcome email to ${to} deferred:`, err.message);
+    return { sent: false, reason: err.message };
+  }
+};
+

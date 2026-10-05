@@ -18,10 +18,13 @@ import {
   ShieldAlert,
   Radio,
   Bike,
-  Car
+  Car,
+  Navigation,
+  Compass
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getLiveRating } from '../utils/ratings';
+import { calculateDistanceKm, estimateWalkingOrDrivingTime, TN_TRANSIT_HUBS } from '../utils/geoUtils';
 import ReportModal from './ReportModal';
 import LiveTrackingModal from './LiveTrackingModal';
 
@@ -31,7 +34,12 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
   const [selectedType, setSelectedType] = useState('All');
   const [maxHourlyPrice, setMaxHourlyPrice] = useState(750);
   const [minRating, setMinRating] = useState(0);
-  const [sortBy, setSortBy] = useState('price-asc');
+  const [sortBy, setSortBy] = useState('nearest'); // 'nearest' | 'price-asc' | 'price-desc' | 'rating-desc' | 'range-desc'
+
+  // User GPS Proximity State
+  const [userHub, setUserHub] = useState(TN_TRANSIT_HUBS[0]); // default Chennai Central
+  const [isUsingDeviceGps, setIsUsingDeviceGps] = useState(false);
+  const [maxDistanceFilter, setMaxDistanceFilter] = useState('all'); // 'all' | '3' | '5' | '15'
   
   // Modals
   const [reportingHost, setReportingHost] = useState(null);
@@ -39,19 +47,49 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
 
   const vehicleTypes = ['All', 'Bikes & Scooters', 'Electric', 'SUV', 'Sedan', 'Hatchback'];
 
+  // Handle GPS location request from device
+  const handleDetectDeviceGps = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserHub({
+            id: 'device_current_gps',
+            name: '📍 My Current Location (Device GPS)',
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude
+          });
+          setIsUsingDeviceGps(true);
+          setSortBy('nearest');
+        },
+        () => {
+          alert('Could not retrieve device GPS. Defaulting to Chennai Central Hub.');
+        }
+      );
+    }
+  };
+
   // Filtering & Sorting logic
   const filteredRentals = useMemo(() => {
     return rentals
-      .map((car) => ({
-        ...car,
-        liveRating: getLiveRating({
-          reviews,
-          targetType: 'rental',
-          targetName: car.name,
-          fallbackRating: car.rating,
-          fallbackCount: car.reviews
-        })
-      }))
+      .map((car) => {
+        const carLat = car.gpsLocation?.lat || 13.0827;
+        const carLng = car.gpsLocation?.lng || 80.2707;
+        const distance = calculateDistanceKm(userHub.lat, userHub.lng, carLat, carLng);
+        const estTime = estimateWalkingOrDrivingTime(distance);
+
+        return {
+          ...car,
+          distanceKm: distance !== null ? distance : 1.2,
+          estimatedTime: estTime,
+          liveRating: getLiveRating({
+            reviews,
+            targetType: 'rental',
+            targetName: car.name,
+            fallbackRating: car.rating,
+            fallbackCount: car.reviews
+          })
+        };
+      })
       .filter((car) => {
         if (selectedType === 'Bikes & Scooters') {
           if (car.type !== 'Bike' && car.category !== 'bike' && !car.name.toLowerCase().includes('enfield') && !car.name.toLowerCase().includes('jupiter') && !car.name.toLowerCase().includes('ola') && !car.name.toLowerCase().includes('aerox')) {
@@ -67,6 +105,13 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
         if (minRating > 0 && car.liveRating.rating < minRating) {
           return false;
         }
+
+        // Distance filter
+        if (maxDistanceFilter !== 'all') {
+          const maxD = parseFloat(maxDistanceFilter);
+          if (car.distanceKm > maxD) return false;
+        }
+
         if (searchQuery.trim()) {
           const query = searchQuery.toLowerCase();
           const matchesName = car.name.toLowerCase().includes(query);
@@ -78,13 +123,14 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
         }
         return true;
       }).sort((a, b) => {
+        if (sortBy === 'nearest') return a.distanceKm - b.distanceKm;
         if (sortBy === 'price-asc') return a.hourlyPrice - b.hourlyPrice;
         if (sortBy === 'price-desc') return b.hourlyPrice - a.hourlyPrice;
         if (sortBy === 'rating-desc') return b.liveRating.rating - a.liveRating.rating;
         if (sortBy === 'range-desc') return b.rangeKm - a.rangeKm;
         return 0;
       });
-  }, [rentals, reviews, selectedType, maxHourlyPrice, minRating, searchQuery, sortBy]);
+  }, [rentals, reviews, selectedType, maxHourlyPrice, minRating, searchQuery, sortBy, userHub, maxDistanceFilter]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
@@ -113,6 +159,70 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
 
         {/* Filter & Control Bar */}
         <div className="pt-4 border-t border-slate-100 space-y-4">
+
+          {/* Location Proximity & GPS Selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-extrabold text-amber-900 flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-amber-600" />
+                Find Near Location:
+              </span>
+              <select
+                value={userHub.id}
+                onChange={(e) => {
+                  const found = TN_TRANSIT_HUBS.find(h => h.id === e.target.value);
+                  if (found) {
+                    setUserHub(found);
+                    setIsUsingDeviceGps(false);
+                    setSortBy('nearest');
+                  }
+                }}
+                className="bg-white border border-amber-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-xs cursor-pointer"
+              >
+                {TN_TRANSIT_HUBS.map((hub) => (
+                  <option key={hub.id} value={hub.id}>
+                    {hub.name}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleDetectDeviceGps}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                  isUsingDeviceGps 
+                    ? 'bg-emerald-600 text-white shadow-emerald-200'
+                    : 'bg-white hover:bg-amber-100 text-amber-800 border border-amber-300'
+                }`}
+                title="Use device GPS to calculate live vehicle proximity"
+              >
+                <Navigation className={`w-3.5 h-3.5 ${isUsingDeviceGps ? 'animate-pulse' : ''}`} />
+                <span>{isUsingDeviceGps ? '📍 GPS Locked' : '📍 Near Me (GPS)'}</span>
+              </button>
+            </div>
+
+            {/* Distance Filter Radius */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-600 font-bold">Max Radius:</span>
+              {[
+                { label: 'All', value: 'all' },
+                { label: '≤ 3 km', value: '3' },
+                { label: '≤ 5 km', value: '5' },
+                { label: '≤ 15 km', value: '15' }
+              ].map((rad) => (
+                <button
+                  key={rad.value}
+                  onClick={() => setMaxDistanceFilter(rad.value)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    maxDistanceFilter === rad.value
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  {rad.label}
+                </button>
+              ))}
+            </div>
+          </div>
           
           {/* Top Row: Type Pills & Search */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -190,6 +300,7 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
                 onChange={(e) => setSortBy(e.target.value)}
                 className="bg-white border border-slate-300 text-slate-900 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 cursor-pointer shadow-xs"
               >
+                <option value="nearest">📍 Nearest First (Proximity)</option>
                 <option value="price-asc">Price: Low to High</option>
                 <option value="price-desc">Price: High to Low</option>
                 <option value="rating-desc">Highest Customer Rating</option>
@@ -293,6 +404,14 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
                           <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                           <span>{car.location}</span>
                         </p>
+
+                        {/* Proximity Distance & Travel Time Badge */}
+                        <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-extrabold">
+                          <Compass className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                          <span>📍 {car.distanceKm} km away</span>
+                          <span className="text-amber-400">•</span>
+                          <span className="text-amber-700 font-medium">~{car.estimatedTime}</span>
+                        </div>
                       </div>
                     </div>
 
@@ -341,6 +460,24 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
                         <ShieldAlert className="w-4 h-4" />
                       </button>
 
+                      {/* Text Host Query Button */}
+                      {onOpenChat && (
+                        <button
+                          onClick={() => onOpenChat({
+                            name: car.hostName || car.name,
+                            driverName: car.hostName || car.name,
+                            vehicle: car.name,
+                            vehicleModel: car.name,
+                            title: car.name,
+                            location: car.location
+                          }, 'rental')}
+                          className="p-2 rounded-xl bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border border-slate-200 transition-colors"
+                          title="Text Host for Query"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </button>
+                      )}
+
                       {/* Live Telemetry Radar */}
                       <button
                         onClick={() => setTrackingRental({
@@ -350,7 +487,9 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
                           rideOtp: '4892',
                           isOtpVerified: true,
                           from: car.location,
-                          to: 'Tamil Nadu Highway Corridor'
+                          to: 'Tamil Nadu Highway Corridor',
+                          pickupCoords: car.gpsLocation || { lat: 13.0827, lng: 80.2707 },
+                          mode: 'Self-Drive Rental'
                         })}
                         className="p-2 rounded-xl bg-slate-100 hover:bg-cyan-50 text-slate-600 hover:text-cyan-700 border border-slate-200 transition-colors"
                         title="View Fleet GPS Telemetry"
@@ -373,7 +512,7 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
                             });
                           }
                         }}
-                        className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1"
+                        className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
                       >
                         <span>Reserve</span>
                         <ChevronRight className="w-3.5 h-3.5" />
@@ -400,6 +539,7 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
         <LiveTrackingModal
           trip={trackingRental}
           onClose={() => setTrackingRental(null)}
+          onOpenChat={onOpenChat}
         />
       )}
 

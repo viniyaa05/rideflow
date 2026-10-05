@@ -1,7 +1,7 @@
 import express from 'express';
 import User from '../models/User.js';
 import { dbStore } from '../services/dbStore.js';
-import { sendPasswordResetEmail } from '../services/mailService.js';
+import { sendPasswordResetEmail, sendWelcomeEmail } from '../services/mailService.js';
 
 const router = express.Router();
 
@@ -155,6 +155,57 @@ router.post('/login', async (req, res) => {
     }
 
     if (!user) {
+      // If user typed an email that doesn't exist yet, automatically persist them to MongoDB Atlas!
+      if (email && email.includes('@')) {
+        const cleanEmail = email.trim().toLowerCase();
+        const displayName = cleanEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const newUserId = 'usr_' + Date.now();
+        const newUserDoc = {
+          id: newUserId,
+          name: displayName || 'RideFlow Commuter',
+          phone: phone ? phone.trim() : '+91 98401 ' + Math.floor(10000 + Math.random() * 90000),
+          email: cleanEmail,
+          password: password, // Saved prior in MongoDB so future logins cross-verify this exact password
+          role: 'user',
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(displayName)}`,
+          rating: 5.0,
+          tripsCount: 0,
+          walletBalance: 500,
+          strikes: 0,
+          isSuspended: false,
+          oauthProvider: 'local',
+          createdAt: new Date().toISOString()
+        };
+
+        let mongoSaved = false;
+        try {
+          user = await User.create(newUserDoc);
+          mongoSaved = true;
+          console.log(`[MongoDB Auth] New user registered & saved to MongoDB Atlas during sign-in: ${cleanEmail}`);
+        } catch (mErr) {
+          console.warn(`[MongoDB Auth] MongoDB Atlas save fallback:`, mErr.message);
+          user = newUserDoc;
+        }
+
+        dbStore.addUser(user);
+        SEEDED_USERS.unshift(user);
+
+        // Dispatch Welcome Email asynchronously
+        sendWelcomeEmail({ to: cleanEmail, userName: displayName }).catch((e) => {
+          console.warn('[MailService] Welcome email async dispatch notice:', e.message);
+        });
+
+        return res.json({
+          success: true,
+          isNewAccount: true,
+          message: mongoSaved 
+            ? `New user account created and saved to MongoDB Atlas! Password saved for future cross-verification.`
+            : `New user account registered and saved to persistent database.`,
+          user,
+          mongoSaved
+        });
+      }
+
       return res.status(404).json({ 
         success: false, 
         error: 'No account found with these credentials. Please check your phone/email.' 
@@ -164,7 +215,7 @@ router.post('/login', async (req, res) => {
     if (user.password !== password) {
       return res.status(401).json({ 
         success: false, 
-        error: 'Incorrect password for this account. Please try again.' 
+        error: 'Incorrect password for this account. Please enter the correct password.' 
       });
     }
 
@@ -178,7 +229,7 @@ router.post('/login', async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Login successful',
+      message: 'Login successful! Verified against MongoDB database.',
       user
     });
 
@@ -255,6 +306,12 @@ router.post('/register', async (req, res) => {
 
     // Also update in-memory
     SEEDED_USERS.unshift(newUser);
+
+    if (cleanEmail && cleanEmail.includes('@') && !cleanEmail.endsWith('@rideflow.local')) {
+      sendWelcomeEmail({ to: cleanEmail, userName: name.trim() }).catch((e) => {
+        console.warn('[MailService] Welcome email async dispatch notice:', e.message);
+      });
+    }
 
     return res.json({
       success: true,
