@@ -236,17 +236,49 @@ export const AuthProvider = ({ children }) => {
   const [liveUpdateToast, setLiveUpdateToast] = useState('');
   const [dbStatus, setDbStatus] = useState({ connected: true, service: 'MongoDB Backend' });
 
-  // Check MongoDB Backend Health on mount
+  // Check MongoDB Backend Health & Sync Fleet Data on mount
   useEffect(() => {
-    const checkMongo = async () => {
+    const checkMongoAndSync = async () => {
       try {
         const res = await api.checkHealth();
         setDbStatus(res);
-      } catch {
+
+        // Live-sync vehicles, rentals, carpools, and drivers from backend database
+        const [rentalsRes, carpoolsRes, driversRes] = await Promise.all([
+          api.getRentals(),
+          api.getCarpools(),
+          api.getDrivers()
+        ]);
+
+        if (rentalsRes && rentalsRes.success && rentalsRes.rentals?.length > 0) {
+          setRentals((prev) => {
+            const map = new Map();
+            [...rentalsRes.rentals, ...prev].forEach(r => map.set(r.id, r));
+            return Array.from(map.values());
+          });
+        }
+
+        if (carpoolsRes && carpoolsRes.success && carpoolsRes.carpools?.length > 0) {
+          setCarpools((prev) => {
+            const map = new Map();
+            [...carpoolsRes.carpools, ...prev].forEach(c => map.set(c.id, c));
+            return Array.from(map.values());
+          });
+        }
+
+        if (driversRes && driversRes.success && driversRes.drivers?.length > 0) {
+          setDrivers((prev) => {
+            const map = new Map();
+            [...driversRes.drivers, ...prev].forEach(d => map.set(d.id, d));
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        console.warn('[Sync Database Fallback]', err);
         setDbStatus({ status: 'offline', database: 'Local Storage Fallback' });
       }
     };
-    checkMongo();
+    checkMongoAndSync();
   }, []);
 
   // Sync user-specific bookings whenever active user changes
@@ -561,19 +593,20 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem(`rideflow_bookings_${newUserId}`, JSON.stringify([]));
     
     // Persist new user into MongoDB database
-    api.register({
-      name: newUser.name,
-      email: newUser.email,
-      phone: newUser.phone,
-      password: userDataInput.password,
-      role: 'user'
-    }).then((res) => {
-      if (res && res.success) {
+    try {
+      const regRes = await api.register({
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        password: userDataInput.password,
+        role: 'user'
+      });
+      if (regRes && regRes.success) {
         console.log('[MongoDB Auth Sync] New user registered & saved in MongoDB:', newUser.email);
       }
-    }).catch((err) => {
+    } catch (err) {
       console.warn('[MongoDB Auth Sync Warning]', err.message);
-    });
+    }
 
     const jwt = generateJWT(newUser);
     setJwtToken(jwt.token);
@@ -958,7 +991,7 @@ export const AuthProvider = ({ children }) => {
     return newRev;
   };
 
-  const addRentalCar = (carData) => {
+  const addRentalCar = async (carData) => {
     const newCar = {
       id: 'rent-user-' + Date.now(),
       category: carData.category || 'car',
@@ -988,10 +1021,20 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('rideflow_rentals', JSON.stringify(updated));
       return updated;
     });
+
+    // Persist to MongoDB database via Express API
+    api.registerRental(newCar).then((res) => {
+      if (res && res.success) {
+        console.log('[MongoDB Fleet Sync] Rental vehicle persisted to database:', newCar.name);
+      }
+    }).catch((err) => {
+      console.warn('[MongoDB Fleet Sync Warning]', err.message);
+    });
+
     return newCar;
   };
 
-  const addCarpoolRide = (poolData) => {
+  const addCarpoolRide = async (poolData) => {
     const newPool = {
       id: 'pool-user-' + Date.now(),
       hostName: user?.name || 'Alex Chen',
@@ -1021,10 +1064,20 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('rideflow_carpools', JSON.stringify(updated));
       return updated;
     });
+
+    // Persist to MongoDB database via Express API
+    api.offerCarpool(newPool).then((res) => {
+      if (res && res.success) {
+        console.log('[MongoDB Fleet Sync] Carpool ride persisted to database:', newPool.from, '->', newPool.to);
+      }
+    }).catch((err) => {
+      console.warn('[MongoDB Fleet Sync Warning]', err.message);
+    });
+
     return newPool;
   };
 
-  const registerAsDriver = (driverData) => {
+  const registerAsDriver = async (driverData) => {
     const isBike = driverData.category === 'bike' || driverData.isBikeTaxi;
     const newDriver = {
       id: 'drv-user-' + Date.now(),
@@ -1056,6 +1109,16 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('rideflow_drivers', JSON.stringify(updated));
       return updated;
     });
+
+    // Persist to MongoDB database via Express API
+    api.registerDriver(newDriver).then((res) => {
+      if (res && res.success) {
+        console.log('[MongoDB Fleet Sync] Driver registered & persisted to database:', newDriver.name);
+      }
+    }).catch((err) => {
+      console.warn('[MongoDB Fleet Sync Warning]', err.message);
+    });
+
     return newDriver;
   };
 

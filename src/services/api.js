@@ -187,5 +187,74 @@ export const api = {
     } catch {
       return { offline: true };
     }
+  },
+
+  // Fleet: Register Rental Vehicle
+  async registerRental(carData) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/fleet/register-rental`, {
+        method: 'POST',
+        body: JSON.stringify(carData)
+      });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
+  },
+
+  // Fleet: Fetch Rental Vehicles
+  async getRentals() {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/fleet/rentals`, { method: 'GET' });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
+  },
+
+  // Fleet: Offer Carpool Ride
+  async offerCarpool(poolData) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/fleet/offer-carpool`, {
+        method: 'POST',
+        body: JSON.stringify(poolData)
+      });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
+  },
+
+  // Fleet: Fetch Carpools
+  async getCarpools() {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/fleet/carpools`, { method: 'GET' });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
+  },
+
+  // Fleet: Register Driver Partner
+  async registerDriver(driverData) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/fleet/register-driver`, {
+        method: 'POST',
+        body: JSON.stringify(driverData)
+      });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
+  },
+
+  // Fleet: Fetch Driver Partners
+  async getDrivers() {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/fleet/drivers`, { method: 'GET' });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
   }
 };

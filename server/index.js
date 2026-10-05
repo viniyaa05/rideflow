@@ -82,14 +82,12 @@ app.use((err, req, res, next) => {
 const startServer = async () => {
   try {
     const isMongoConnected = await connectDB();
-    if (isMongoConnected) {
-      await seedUsers();
-      await seedVehicles();
-    }
+    await seedUsers();
+    await seedVehicles();
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 RideFlow Backend Express Server running on http://localhost:${PORT}`);
-      console.log(`📡 MongoDB API Status endpoint: http://localhost:${PORT}/api/health`);
+      console.log(`📡 Database status: ${isMongoConnected ? 'Connected to MongoDB Atlas' : 'Running with Persistent Local DB'}`);
     });
   } catch (error) {
     console.error('Failed to start RideFlow server:', error);

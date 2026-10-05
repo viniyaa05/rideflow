@@ -1,5 +1,6 @@
 import express from 'express';
 import User from '../models/User.js';
+import { dbStore } from '../services/dbStore.js';
 
 const router = express.Router();
 
@@ -91,13 +92,18 @@ const SEEDED_USERS = [
   }
 ];
 
-// Seed initial users into MongoDB if empty
+// Seed initial users into MongoDB & local dbStore
 export const seedUsers = async () => {
   try {
     for (const u of SEEDED_USERS) {
-      await User.findOneAndUpdate({ id: u.id }, u, { upsert: true, new: true });
+      dbStore.addUser(u);
+      try {
+        await User.findOneAndUpdate({ id: u.id }, u, { upsert: true, new: true });
+      } catch (mErr) {
+        // Mongo sync error handled
+      }
     }
-    console.log('[MongoDB Auth] 6 Seeded Personas verified in MongoDB.');
+    console.log('[MongoDB Auth] Seeded personas synchronized to database and local store.');
   } catch (err) {
     console.warn('[MongoDB Auth] Seeding fallback:', err.message);
   }
@@ -127,6 +133,16 @@ router.post('/login', async (req, res) => {
       }
     } catch {
       // Offline fallback search
+    }
+
+    if (!user) {
+      // Check in persistent local dbStore
+      const cleanPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
+      const cleanEmail = email ? email.trim().toLowerCase() : '';
+      user = dbStore.findUser(u => 
+        (cleanPhone && (u.phone.replace(/[^0-9]/g, '').includes(cleanPhone) || cleanPhone.includes(u.phone.replace(/[^0-9]/g, '')))) ||
+        (cleanEmail && u.email.toLowerCase() === cleanEmail)
+      );
     }
 
     if (!user) {
@@ -179,33 +195,73 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Name, phone, and password are required' });
     }
 
+    const cleanEmail = (email || `${phone.replace(/[^0-9]/g, '')}@rideflow.local`).trim().toLowerCase();
+    const cleanPhone = phone.trim();
+
+    // Check if user already exists
+    let existingUser = null;
+    try {
+      existingUser = await User.findOne({
+        $or: [{ email: cleanEmail }, { phone: cleanPhone }]
+      });
+    } catch {
+      // offline check
+    }
+
+    if (!existingUser) {
+      existingUser = dbStore.findUser(u => 
+        u.email.toLowerCase() === cleanEmail || 
+        u.phone.replace(/[^0-9]/g, '') === cleanPhone.replace(/[^0-9]/g, '')
+      );
+    }
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'An account with this email or phone number is already registered. Please log in.'
+      });
+    }
+
     const newUserId = 'usr_' + Date.now();
     const newUser = {
       id: newUserId,
-      name,
-      phone,
-      email: email || `${phone.replace(/[^0-9]/g, '')}@rideflow.local`,
+      name: name.trim(),
+      phone: cleanPhone,
+      email: cleanEmail,
       password,
       role: role || 'user',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
       rating: 5.0,
       tripsCount: 0,
       walletBalance: 300,
       strikes: 0,
-      isSuspended: false
+      isSuspended: false,
+      createdAt: new Date().toISOString()
     };
 
+    // 1. Immediately persist to local disk dbStore
+    dbStore.addUser(newUser);
+
+    // 2. Persist to MongoDB Atlas
+    let mongoSaved = false;
     try {
       await User.create(newUser);
-    } catch {
-      // In-memory fallback
-      SEEDED_USERS.push(newUser);
+      mongoSaved = true;
+      console.log(`[MongoDB Auth] User successfully created in MongoDB Atlas: ${newUser.email}`);
+    } catch (mErr) {
+      console.warn(`[MongoDB Auth] MongoDB Atlas save fallback:`, mErr.message);
     }
+
+    // Also update in-memory
+    SEEDED_USERS.unshift(newUser);
 
     return res.json({
       success: true,
-      message: 'Account registered successfully in MongoDB',
-      user: newUser
+      message: mongoSaved 
+        ? 'Account registered and persisted successfully in MongoDB database'
+        : 'Account registered and persisted successfully in database storage',
+      user: newUser,
+      dbSaved: true
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -372,7 +428,9 @@ router.post('/reset-password', async (req, res) => {
       // In-memory fallback
     }
 
-    // Also update SEEDED_USERS in memory
+    // Also update dbStore and in-memory users
+    dbStore.updateUserPassword(cleanId, newPassword);
+
     const seeded = SEEDED_USERS.find(u => 
       isPhone 
         ? (u.phone.replace(/[^0-9]/g, '').includes(cleanId.replace(/[^0-9]/g, ''))) 
@@ -403,9 +461,17 @@ router.get('/users', async (req, res) => {
     try {
       users = await User.find({}).sort({ createdAt: -1 });
     } catch {
-      users = SEEDED_USERS;
+      // ignore
     }
-    return res.json({ success: true, users: users.length ? users : SEEDED_USERS });
+    const storeUsers = dbStore.getUsers();
+    // Combine without duplicate IDs
+    const combined = [...users];
+    for (const su of storeUsers) {
+      if (!combined.some(u => u.id === su.id)) {
+        combined.push(su);
+      }
+    }
+    return res.json({ success: true, users: combined.length ? combined : SEEDED_USERS });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

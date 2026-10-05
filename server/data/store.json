@@ -1,0 +1,144 @@
+{
+  "users": [
+    {
+      "id": "usr_test_1791196454665",
+      "name": "Kaviniyaa Test User",
+      "email": "kaviniyaa.test_1791196454665@gmail.com",
+      "phone": "+91 80728 35684",
+      "password": "securepassword123",
+      "role": "user"
+    },
+    {
+      "id": "usr_alex_chen",
+      "name": "Alex Chen",
+      "phone": "+91 98401 23456",
+      "email": "alex.chen@gmail.com",
+      "password": "alex123",
+      "role": "driver",
+      "avatar": "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+      "rating": 4.95,
+      "tripsCount": 142,
+      "walletBalance": 1250,
+      "strikes": 0,
+      "isSuspended": false
+    },
+    {
+      "id": "usr_pooja_sundaram",
+      "name": "Pooja Sundaram",
+      "phone": "+91 98409 11223",
+      "email": "pooja.sundaram@gmail.com",
+      "password": "pooja123",
+      "role": "user",
+      "avatar": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150",
+      "rating": 4.88,
+      "tripsCount": 38,
+      "walletBalance": 420,
+      "strikes": 0,
+      "isSuspended": false
+    },
+    {
+      "id": "usr_karthik_raja",
+      "name": "Karthik Raja",
+      "phone": "+91 97890 55443",
+      "email": "karthik.raja@yahoo.com",
+      "password": "karthik123",
+      "role": "driver",
+      "avatar": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150",
+      "rating": 4.92,
+      "tripsCount": 210,
+      "walletBalance": 2400,
+      "strikes": 0,
+      "isSuspended": false
+    },
+    {
+      "id": "usr_ananya_sharma",
+      "name": "Ananya Sharma",
+      "phone": "+91 98840 99887",
+      "email": "ananya.sharma@outlook.com",
+      "password": "ananya123",
+      "role": "user",
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+      "rating": 4.79,
+      "tripsCount": 19,
+      "walletBalance": 180,
+      "strikes": 0,
+      "isSuspended": false
+    },
+    {
+      "id": "usr_rajesh_kumar",
+      "name": "Rajesh Kumar",
+      "phone": "+91 94440 12345",
+      "email": "rajesh.kumar@gmail.com",
+      "password": "rajesh123",
+      "role": "driver",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150",
+      "rating": 4.65,
+      "tripsCount": 88,
+      "walletBalance": 320,
+      "strikes": 2,
+      "isSuspended": false
+    },
+    {
+      "id": "usr_admin_tn",
+      "name": "Tamil Nadu Admin",
+      "phone": "+91 99999 00000",
+      "email": "admin@rideflow.tn.gov.in",
+      "password": "admin123",
+      "role": "admin",
+      "avatar": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150",
+      "rating": 5,
+      "tripsCount": 0,
+      "walletBalance": 99999,
+      "strikes": 0,
+      "isSuspended": false
+    }
+  ],
+  "rentals": [
+    {
+      "id": "rent_test_1791196455453",
+      "name": "Tata Nexon EV Dark Edition",
+      "brand": "Tata",
+      "type": "SUV",
+      "category": "car-rent",
+      "model": "Nexon EV Empowered",
+      "hourlyPrice": 180,
+      "dailyPrice": 1400,
+      "seats": 5,
+      "rangeKm": 465,
+      "transmission": "Automatic",
+      "location": "Chennai Central",
+      "hostName": "Kaviniyaa Test User",
+      "postedByUserId": "usr_test_1791196454665",
+      "isUserListing": true
+    }
+  ],
+  "carpools": [
+    {
+      "id": "pool_test_1791196456421",
+      "hostName": "Kaviniyaa Test User",
+      "from": "Velachery Bus Depot (600042)",
+      "to": "Siruseri SIPCOT IT Park (603103)",
+      "departureTime": "09:00 AM",
+      "pricePerSeat": 75,
+      "availableSeats": 3,
+      "vehicleModel": "Honda City ZX",
+      "postedByUserId": "usr_test_1791196454665",
+      "isUserListing": true
+    }
+  ],
+  "drivers": [
+    {
+      "id": "drv_test_1791196456704",
+      "name": "Kaviniyaa Test Captain",
+      "category": "bike",
+      "vehicleModel": "Yamaha MT-15 V2",
+      "licensePlate": "TN-09-CB-9988",
+      "phone": "+91 80728 35684",
+      "city": "Chennai",
+      "postedByUserId": "usr_test_1791196454665",
+      "isUserListing": true
+    }
+  ],
+  "vehicles": [],
+  "bookings": []
+}

@@ -95,24 +95,24 @@ export default function PartnerHubView() {
     reader.readAsDataURL(file);
   };
 
-  const handleRentalSubmit = (e) => {
+  const handleRentalSubmit = async (e) => {
     e.preventDefault();
-    addRentalCar(rentalForm);
-    showToast(`✓ Your ${rentalForm.name} is now listed in the Self-Drive / Bike Fleet!`);
+    await addRentalCar(rentalForm);
+    showToast(`✓ Your ${rentalForm.name} is saved to database & listed in the Fleet!`);
     setActivePartnerTab('my-listings');
   };
 
-  const handleCarpoolSubmit = (e) => {
+  const handleCarpoolSubmit = async (e) => {
     e.preventDefault();
-    addCarpoolRide(poolForm);
-    showToast(`✓ Carpool route from ${poolForm.from} to ${poolForm.to} published live!`);
+    await addCarpoolRide(poolForm);
+    showToast(`✓ Carpool route from ${poolForm.from} to ${poolForm.to} saved to database & published!`);
     setActivePartnerTab('my-listings');
   };
 
-  const handleDriverSubmit = (e) => {
+  const handleDriverSubmit = async (e) => {
     e.preventDefault();
-    registerAsDriver(driverForm);
-    showToast(`✓ Congratulations Captain ${driverForm.name}! You are registered.`);
+    await registerAsDriver(driverForm);
+    showToast(`✓ Congratulations Captain ${driverForm.name}! Registered & saved to database.`);
     setActivePartnerTab('my-listings');
   };
 

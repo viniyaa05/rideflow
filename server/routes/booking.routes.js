@@ -1,5 +1,6 @@
 import express from 'express';
 import Booking from '../models/Booking.js';
+import { dbStore } from '../services/dbStore.js';
 
 const router = express.Router();
 
@@ -38,6 +39,9 @@ router.post('/create', async (req, res) => {
       driverOrHost: payload.driverOrHost || payload.details || 'RideFlow Verified Driver / Host',
       createdAt: new Date()
     };
+
+    // 1. Immediately persist to disk dbStore
+    dbStore.addBooking(newBooking);
 
     let savedDoc = newBooking;
 
