@@ -254,6 +254,24 @@ class DBStore {
     this.saveData();
     return booking;
   }
+
+  // --- Password Reset OTPs ---
+  setResetOTP(identifier, record) {
+    if (!this.data.resets) this.data.resets = {};
+    this.data.resets[identifier.toLowerCase().trim()] = record;
+    this.saveData();
+  }
+
+  getResetOTP(identifier) {
+    if (!this.data.resets) this.data.resets = {};
+    return this.data.resets[identifier.toLowerCase().trim()];
+  }
+
+  deleteResetOTP(identifier) {
+    if (!this.data.resets) return;
+    delete this.data.resets[identifier.toLowerCase().trim()];
+    this.saveData();
+  }
 }
 
 export const dbStore = new DBStore();

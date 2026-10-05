@@ -685,9 +685,11 @@ export const AuthProvider = ({ children }) => {
     const normalizedKey = cleanId.toLowerCase();
 
     // 1. Verify and update via Express + MongoDB backend
+    const resets = readResets();
+    const record = resets[normalizedKey];
     let backendHandled = false;
     try {
-      const res = await api.resetPassword(cleanId, enteredOtp, newPassword);
+      const res = await api.resetPassword(cleanId, enteredOtp, newPassword, record?.otp);
       if (res && res.success) {
         backendHandled = true;
       } else if (res && res.error) {
@@ -700,8 +702,6 @@ export const AuthProvider = ({ children }) => {
     }
 
     // 2. Offline validation if backend was unreachable
-    const resets = readResets();
-    const record = resets[normalizedKey];
     if (!backendHandled) {
       if (!record) {
         throw new Error('No active OTP verification request found. Please request a new code.');

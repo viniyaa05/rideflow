@@ -9,7 +9,7 @@ const API_BASE_URL = typeof window !== 'undefined' && (window.location.port === 
   : '/api';
 
 
-const fetchWithTimeout = async (url, options = {}, timeoutMs = 4000) => {
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 12000) => {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -33,7 +33,7 @@ export const api = {
   // Check backend & MongoDB connection health
   async checkHealth() {
     try {
-      const res = await fetchWithTimeout(`${API_BASE_URL}/health`, { method: 'GET' }, 2500);
+      const res = await fetchWithTimeout(`${API_BASE_URL}/health`, { method: 'GET' }, 4000);
       if (res.ok) {
         return await res.json();
       }
@@ -81,7 +81,7 @@ export const api = {
       const res = await fetchWithTimeout(`${API_BASE_URL}/auth/request-reset`, {
         method: 'POST',
         body: JSON.stringify({ identifier })
-      });
+      }, 15000);
       return await res.json();
     } catch {
       return { offline: true };
@@ -89,12 +89,12 @@ export const api = {
   },
 
   // Auth: Reset Password with Strict OTP Verification
-  async resetPassword(identifier, otp, newPassword) {
+  async resetPassword(identifier, otp, newPassword, clientOtp = null) {
     try {
       const res = await fetchWithTimeout(`${API_BASE_URL}/auth/reset-password`, {
         method: 'POST',
-        body: JSON.stringify({ identifier, otp, newPassword })
-      });
+        body: JSON.stringify({ identifier, otp, newPassword, clientOtp })
+      }, 15000);
       return await res.json();
     } catch {
       return { offline: true };

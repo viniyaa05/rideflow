@@ -140,5 +140,13 @@
     }
   ],
   "vehicles": [],
-  "bookings": []
+  "bookings": [],
+  "resets": {
+    "24104108@nec.edu.in": {
+      "otp": "286891",
+      "expiresAt": 1791198850835,
+      "attempts": 0,
+      "recipient": "24104108@nec.edu.in"
+    }
+  }
 }

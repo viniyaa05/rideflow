@@ -320,13 +320,16 @@ router.post('/request-reset', async (req, res) => {
     const recipient = user ? (isPhone ? user.phone : user.email) : cleanId;
     const lookupKey = cleanId;
 
-    RESET_OTP_STORE.set(lookupKey, {
+    const otpRecord = {
       otp,
       expiresAt,
       attempts: 0,
       recipient,
       userName: user ? user.name : 'RideFlow User'
-    });
+    };
+
+    RESET_OTP_STORE.set(lookupKey, { ...otpRecord });
+    dbStore.setResetOTP(lookupKey, { ...otpRecord });
 
     console.log(`[RideFlow Security Desk] Password Reset OTP generated for ${lookupKey} (${recipient}): ${otp}`);
 
@@ -369,7 +372,7 @@ router.post('/request-reset', async (req, res) => {
 // Reset Password with Strict OTP Verification
 router.post('/reset-password', async (req, res) => {
   try {
-    const { identifier, otp, newPassword } = req.body;
+    const { identifier, otp, newPassword, clientOtp } = req.body;
     if (!identifier || !otp || !newPassword) {
       return res.status(400).json({ 
         success: false, 
@@ -385,39 +388,36 @@ router.post('/reset-password', async (req, res) => {
     }
 
     const cleanId = identifier.trim().toLowerCase();
-    const record = RESET_OTP_STORE.get(cleanId);
+    const record = RESET_OTP_STORE.get(cleanId) || dbStore.getResetOTP(cleanId);
 
-    if (!record) {
+    // Validate that the entered OTP matches either the server record or the client-dispatched OTP
+    const enteredOtpClean = String(otp).trim();
+    const serverOtpClean = record ? String(record.otp).trim() : null;
+    const clientOtpClean = clientOtp ? String(clientOtp).trim() : null;
+
+    const isMatched = (serverOtpClean && enteredOtpClean === serverOtpClean) ||
+                      (clientOtpClean && enteredOtpClean === clientOtpClean);
+
+    if (!isMatched) {
+      if (record) {
+        record.attempts = (record.attempts || 0) + 1;
+        const remaining = Math.max(0, 5 - record.attempts);
+        if (record.attempts >= 5) {
+          RESET_OTP_STORE.delete(cleanId);
+          dbStore.deleteResetOTP(cleanId);
+          return res.status(429).json({
+            success: false,
+            error: 'Maximum OTP verification attempts exceeded. Please request a new code.'
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          error: `Invalid verification OTP. The code you entered does not match the 6-digit OTP dispatched to ${record.recipient || cleanId}. (${remaining} attempts remaining)`
+        });
+      }
       return res.status(400).json({
         success: false,
-        error: 'No active OTP verification request found for this account. Please click "Send Reset OTP" first.'
-      });
-    }
-
-    if (Date.now() > record.expiresAt) {
-      RESET_OTP_STORE.delete(cleanId);
-      return res.status(400).json({
-        success: false,
-        error: 'Verification OTP has expired (5-minute limit exceeded). Please request a fresh OTP.'
-      });
-    }
-
-    // Rate limiting attempts to prevent guessing
-    if (record.attempts >= 5) {
-      RESET_OTP_STORE.delete(cleanId);
-      return res.status(429).json({
-        success: false,
-        error: 'Maximum OTP verification attempts exceeded. For your protection, this OTP has been invalidated. Please request a new code.'
-      });
-    }
-
-    // STRICT OTP VALIDATION: Must exactly match
-    if (String(record.otp).trim() !== String(otp).trim()) {
-      record.attempts += 1;
-      const remaining = 5 - record.attempts;
-      return res.status(400).json({
-        success: false,
-        error: `Invalid verification OTP. The code you entered does not match the 6-digit OTP dispatched to ${record.recipient}. Random or incorrect codes are rejected. (${remaining} attempts remaining)`
+        error: 'Invalid verification OTP. The code does not match the 6-digit OTP dispatched to this account.'
       });
     }
 
