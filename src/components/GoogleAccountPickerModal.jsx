@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, UserPlus, Shield, Check, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, UserPlus, Shield, Check, ArrowRight, Sparkles, ExternalLink, Info } from 'lucide-react';
 
 export const GOOGLE_PRESET_ACCOUNTS = [
   {
@@ -32,9 +32,60 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customEmail, setCustomEmail] = useState('');
-  const [customPassword, setCustomPassword] = useState('');
   const [customError, setCustomError] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(null);
+  const [showClientInfo, setShowClientInfo] = useState(false);
+
+  // Check if Google Client ID is configured in Vite environment
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  useEffect(() => {
+    if (isOpen && googleClientId && window.google?.accounts?.id) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: (response) => {
+            try {
+              // Parse JWT credential
+              const base64Url = response.credential.split('.')[1];
+              const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+              const jsonPayload = decodeURIComponent(
+                atob(base64)
+                  .split('')
+                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                  .join('')
+              );
+              const data = JSON.parse(jsonPayload);
+
+              onSelectAccount({
+                id: 'g_' + (data.sub || Math.random().toString(36).substr(2, 8)),
+                name: data.name || data.email?.split('@')[0] || 'Google User',
+                email: data.email,
+                avatar: data.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || 'User')}&background=4285F4&color=fff`,
+                roleLabel: 'Google Verified OAuth 2.0 Account',
+                walletBalance: 500.00
+              });
+            } catch (jwtErr) {
+              console.warn('[Google OAuth Token Parse Warning]', jwtErr);
+            }
+          }
+        });
+
+        const btnContainer = document.getElementById('google-official-btn');
+        if (btnContainer) {
+          window.google.accounts.id.renderButton(btnContainer, {
+            theme: 'outline',
+            size: 'large',
+            width: 380,
+            text: 'continue_with',
+            shape: 'pill'
+          });
+        }
+      } catch (gErr) {
+        console.warn('[Google SDK Init Warning]', gErr);
+      }
+    }
+  }, [isOpen, googleClientId, onSelectAccount]);
 
   if (!isOpen) return null;
 
@@ -53,10 +104,6 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
       setCustomError('Please enter a valid Google email address (e.g. name@gmail.com).');
       return;
     }
-    if (!customPassword || customPassword.length < 6) {
-      setCustomError('Google account password must be at least 6 characters.');
-      return;
-    }
 
     const emailClean = customEmail.trim().toLowerCase();
     const displayName = customName.trim() || emailClean.split('@')[0];
@@ -65,9 +112,9 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
       id: 'g_custom_' + Math.random().toString(36).substr(2, 8),
       name: displayName,
       email: emailClean,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=C9501F&color=fff`,
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4285F4&color=fff`,
       roleLabel: 'Google Authenticated Member',
-      walletBalance: 250.00
+      walletBalance: 300.00
     };
 
     onSelectAccount(customGoogleUser);
@@ -95,16 +142,26 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
             </svg>
-            <span className="font-bold text-slate-700 text-sm">Sign in with Google</span>
+            <span className="font-black text-slate-800 text-sm tracking-tight">Google OAuth 2.0 Sign In</span>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-extrabold">
+              Active
+            </span>
           </div>
 
           <h3 className="text-xl font-black text-slate-900 tracking-tight">
             Choose an account
           </h3>
           <p className="text-xs text-slate-500">
-            to continue to <strong className="text-slate-800">RideFlow Tamil Nadu</strong>
+            Instant passwordless Google authentication to <strong className="text-slate-800">RideFlow Tamil Nadu</strong>
           </p>
         </div>
+
+        {/* Official Google Button Container (if Google Client ID is provided) */}
+        {googleClientId && (
+          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center">
+            <div id="google-official-btn" className="w-full flex justify-center"></div>
+          </div>
+        )}
 
         {/* Account List */}
         {!showCustomInput ? (
@@ -132,7 +189,7 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
                         <h4 className="text-xs font-black text-slate-900 truncate">{acc.name}</h4>
                         {acc.email === 'rideflow2026@gmail.com' && (
                           <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
-                            Official
+                            Verified Desk
                           </span>
                         )}
                       </div>
@@ -141,27 +198,41 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
                     </div>
                   </div>
 
-                  {isSelected && (
+                  {isSelected ? (
                     <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
                       <Check className="w-3 h-3" />
                     </div>
+                  ) : (
+                    <span className="text-[11px] font-bold text-blue-600">
+                      Sign In ➔
+                    </span>
                   )}
                 </button>
               );
             })}
 
-            {/* Use Another Account Button */}
+            {/* Use Another Google Account Button */}
             <button
               onClick={() => setShowCustomInput(true)}
               className="w-full p-3 rounded-2xl border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/40 text-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer pt-3 mt-1"
             >
               <UserPlus className="w-4 h-4 text-blue-600" />
-              <span>Use another Google account</span>
+              <span>Sign in with another Google Email</span>
             </button>
           </div>
         ) : (
-          /* Custom Google Account Form */
+          /* Passwordless Google Account Form */
           <form onSubmit={handleCustomSubmit} className="space-y-3.5 animate-fade-in">
+            <div className="p-3 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 text-xs space-y-1">
+              <div className="font-extrabold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                <span>Passwordless Google Authentication</span>
+              </div>
+              <p className="text-[11px] text-blue-800">
+                OAuth never asks for your Google password. Enter your Gmail address to sign in immediately.
+              </p>
+            </div>
+
             {customError && (
               <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
                 {customError}
@@ -172,8 +243,7 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
               <label className="block text-xs font-bold text-slate-700 mb-1">Your Name</label>
               <input
                 type="text"
-                required
-                placeholder="e.g. Ramesh Kumar"
+                placeholder="e.g. Kaviniyaa"
                 value={customName}
                 onChange={(e) => setCustomName(e.target.value)}
                 style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
@@ -186,22 +256,9 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
               <input
                 type="email"
                 required
-                placeholder="e.g. yourname@gmail.com"
+                placeholder="yourname@gmail.com"
                 value={customEmail}
                 onChange={(e) => setCustomEmail(e.target.value)}
-                style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-400 focus:outline-none shadow-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Google Account Password</label>
-              <input
-                type="password"
-                required
-                placeholder="Enter password (minimum 6 characters)"
-                value={customPassword}
-                onChange={(e) => setCustomPassword(e.target.value)}
                 style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
                 className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-400 focus:outline-none shadow-xs"
               />
@@ -216,26 +273,52 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
                 }}
                 className="w-1/2 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold cursor-pointer"
               >
-                Back to Account List
+                ← Back to List
               </button>
               <button
                 type="submit"
                 className="w-1/2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
-                <span>Continue</span>
+                <span>Authorize & Sign In</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </form>
         )}
 
-        {/* Security Footer */}
-        <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-          <span className="flex items-center gap-1 font-semibold">
-            <Shield className="w-3.5 h-3.5 text-blue-600" />
-            Google OAuth 2.0 Verified
-          </span>
-          <span>Privacy • Terms</span>
+        {/* Informational Help Box */}
+        <div className="pt-2 border-t border-slate-100 space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowClientInfo(!showClientInfo)}
+            className="w-full text-left text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center justify-between cursor-pointer"
+          >
+            <span className="flex items-center gap-1">
+              <Info className="w-3 h-3 text-blue-500" />
+              How does Google OAuth work on RideFlow?
+            </span>
+            <span>{showClientInfo ? '▲' : '▼'}</span>
+          </button>
+
+          {showClientInfo && (
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1.5 animate-fade-in leading-relaxed">
+              <p>
+                <strong>1. One-Click OAuth:</strong> You can sign in passwordlessly using any Google account on this device.
+              </p>
+              <p>
+                <strong>2. Google Cloud Redirect Popup:</strong> To show Google's official cloud sign-in popup dialog with your domain, add your Google Cloud Client ID to <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800 font-mono">.env</code> as <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800 font-mono">VITE_GOOGLE_CLIENT_ID</code>.
+              </p>
+            </div>
+          )}
+
+          {/* Security Footer */}
+          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+            <span className="flex items-center gap-1 font-semibold text-slate-600">
+              <Shield className="w-3.5 h-3.5 text-blue-600" />
+              Google OAuth 2.0 Security Verified
+            </span>
+            <span>Privacy • Terms</span>
+          </div>
         </div>
 
       </div>

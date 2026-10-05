@@ -1,6 +1,7 @@
 import express from 'express';
 import User from '../models/User.js';
 import { dbStore } from '../services/dbStore.js';
+import { sendPasswordResetEmail } from '../services/mailService.js';
 
 const router = express.Router();
 
@@ -329,9 +330,23 @@ router.post('/request-reset', async (req, res) => {
 
     console.log(`[RideFlow Security Desk] Password Reset OTP generated for ${lookupKey} (${recipient}): ${otp}`);
 
+    // Live email dispatch via Nodemailer
+    let mailResult = { sent: false, reason: 'not_email' };
+    const emailToDispatch = !isPhone ? cleanId : (user?.email && user.email.includes('@') ? user.email : null);
+    
+    if (emailToDispatch && emailToDispatch.includes('@')) {
+      mailResult = await sendPasswordResetEmail({
+        to: emailToDispatch,
+        userName: user ? user.name : 'RideFlow Member',
+        otp
+      });
+    }
+
     return res.json({
       success: true,
-      message: `Verification code successfully dispatched to ${recipient}.`,
+      message: mailResult.sent
+        ? `Verification code successfully dispatched directly to your inbox at ${emailToDispatch}.`
+        : `Verification code successfully generated for ${recipient}.`,
       delivery: {
         recipient,
         userName: user ? user.name : 'RideFlow User',
@@ -339,6 +354,9 @@ router.post('/request-reset', async (req, res) => {
         senderEmail: 'rideflow2026@gmail.com',
         officialContact: '+91 80728 32066',
         otp,
+        emailSent: mailResult.sent,
+        emailReason: mailResult.reason,
+        dispatchedEmail: emailToDispatch,
         expiresInMinutes: 5,
         dispatchedAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
       }

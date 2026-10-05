@@ -389,12 +389,17 @@ export default function Login({ onBackToLanding }) {
                   <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100/50 border border-amber-200/90 shadow-xs space-y-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                        <div className={`w-7 h-7 rounded-lg ${deliveryInfo?.emailSent ? 'bg-emerald-600' : 'bg-amber-600'} text-white flex items-center justify-center font-bold text-xs shadow-xs`}>
                           <Mail className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <div className="text-[10px] font-black text-amber-950 uppercase tracking-wider">
-                            Official Security Dispatch
+                          <div className="text-[10px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>Official Security Dispatch</span>
+                            {deliveryInfo?.emailSent && (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-extrabold border border-emerald-300">
+                                ✓ Dispatched to Inbox
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-amber-900 font-bold truncate max-w-[210px] sm:max-w-xs">
                             To: <span className="font-mono text-slate-900">{deliveryInfo?.recipient || resetEmail}</span>
@@ -405,6 +410,25 @@ export default function Login({ onBackToLanding }) {
                         Valid 5 Mins
                       </span>
                     </div>
+
+                    {/* Email Delivery Status Banner */}
+                    {deliveryInfo?.emailSent ? (
+                      <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 font-medium flex items-center justify-between">
+                        <span>✓ Email sent to <strong>{deliveryInfo?.dispatchedEmail || resetEmail}</strong></span>
+                        <a
+                          href="https://mail.google.com"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-bold text-emerald-800 hover:text-emerald-950 underline flex items-center gap-1"
+                        >
+                          <span>Open Gmail ↗</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="p-2 rounded-xl bg-amber-100/80 border border-amber-200 text-[10.5px] text-amber-950 leading-relaxed font-medium">
+                        💡 <strong>Real Gmail Inbox Dispatch:</strong> To have Google deliver emails directly from <em>rideflow2026@gmail.com</em>, add your Google App Password to <code className="bg-amber-200 px-1 py-0.5 rounded text-slate-900 font-mono">.env</code> (<code className="bg-amber-200 px-1 py-0.5 rounded text-slate-900 font-mono">EMAIL_PASS</code>). Your authentic code is generated below for immediate verification!
+                      </div>
+                    )}
 
                     {/* Monospace Code Display */}
                     <div className="p-2.5 rounded-xl bg-white border border-amber-200/90 flex flex-col sm:flex-row items-center justify-between gap-2 shadow-xs">
