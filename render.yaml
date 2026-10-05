@@ -14,3 +14,5 @@ services:
         value: mongodb+srv://kaviniyaa05_db_user:kavi123456@cluster0.x6rov7b.mongodb.net/rideflow?authSource=admin&retryWrites=true&w=majority&appName=Cluster0
       - key: EMAIL_USER
         value: rideflow2026@gmail.com
+      - key: EMAIL_PASS
+        value: tppr qgea mdht smjg
