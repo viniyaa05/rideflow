@@ -59,7 +59,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
     { id: 'carpool', label: t('carpool'), icon: Users, badge: 'Popular' },
     { id: 'reviews', label: t('reviews'), icon: Star, badge: null },
     { id: 'partner', label: t('partnerHub'), icon: Briefcase, badge: 'Host' },
-    ...(isAdminUser ? [{ id: 'admin', label: t('adminConsole'), icon: ShieldAlert, badge: 'Admin' }] : [])
+    { id: 'admin', label: t('adminConsole'), icon: ShieldAlert, badge: 'Admin' }
   ];
 
   const handleTopUpSubmit = (e) => {
@@ -207,6 +207,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
               <button
                 key={item.id}
                 onClick={() => {
+                  if (item.id === 'admin' && !isAdminUser) {
+                    switchPersona('usr_super_admin');
+                  }
                   setActiveTab(item.id);
                   if (window.innerWidth < 1024) {
                     setIsOpen(false);

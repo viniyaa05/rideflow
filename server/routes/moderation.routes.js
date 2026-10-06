@@ -152,8 +152,14 @@ router.post('/appeal/:id/resolve', async (req, res) => {
 // Submit support query
 router.post('/query', async (req, res) => {
   try {
-    const { name, email, phone, subject, message, category } = req.body;
-    const queryId = 'qry_' + Date.now();
+    const queryId = req.body.id || ('sup_' + Date.now());
+    const name = req.body.name || req.body.userName || 'Commuter';
+    const email = req.body.email || req.body.userEmail || 'user@rideflow.in';
+    const phone = req.body.phone || req.body.userPhone || '';
+    const subject = req.body.subject || 'Support Query';
+    const message = req.body.message || '';
+    const category = req.body.category || 'General';
+
     const newQuery = {
       id: queryId,
       name,
@@ -161,22 +167,77 @@ router.post('/query', async (req, res) => {
       phone,
       subject,
       message,
-      category: category || 'General',
+      category,
       status: 'open',
+      adminReply: '',
       createdAt: new Date()
     };
 
+    let mongoSaved = false;
     try {
-      await SupportQuery.create(newQuery);
+      await SupportQuery.findOneAndUpdate({ id: queryId }, newQuery, { upsert: true, new: true });
+      mongoSaved = true;
     } catch {
       inMemoryQueries.unshift(newQuery);
     }
 
     return res.json({
       success: true,
-      message: 'Your query has been logged in MongoDB. Support Ticket #' + queryId,
-      query: newQuery
+      message: 'Your query has been logged. Support Ticket #' + queryId,
+      query: newQuery,
+      mongoSaved
     });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin resolves and replies to support query
+router.post('/query/:id/resolve', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminReply, reviewedBy } = req.body;
+    let query = null;
+
+    try {
+      query = await SupportQuery.findOne({ id });
+      if (query) {
+        query.status = 'resolved';
+        query.adminReply = adminReply;
+        await query.save();
+      }
+    } catch {
+      // Offline fallback
+    }
+
+    if (!query) {
+      query = inMemoryQueries.find(q => q.id === id);
+      if (query) {
+        query.status = 'resolved';
+        query.adminReply = adminReply;
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Support query resolved and response saved in database.',
+      query
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get all support queries
+router.get('/queries', async (req, res) => {
+  try {
+    let queries = [];
+    try {
+      queries = await SupportQuery.find({}).sort({ createdAt: -1 });
+    } catch {
+      queries = inMemoryQueries;
+    }
+    return res.json({ success: true, queries });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

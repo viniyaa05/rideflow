@@ -1141,29 +1141,51 @@ export const AuthProvider = ({ children }) => {
     return newDriver;
   };
 
-  const reportUser = ({ targetUserId, targetName, targetRole, reason, description }) => {
+  const reportUser = ({ targetUserId, targetUserName, targetName, targetUserRole, targetRole, reason, description }) => {
     const reporterName = user?.name || 'Verified Rider';
-    const existingForTarget = userReports.filter((r) => r.targetUserId === targetUserId);
+    const reporterUserId = user?.id || 'usr_guest';
+    const resolvedTargetName = targetUserName || targetName || 'User / Partner';
+    const resolvedTargetRole = targetUserRole || targetRole || 'Member';
+
+    const existingForTarget = userReports.filter((r) => 
+      (r.targetUserId && r.targetUserId === targetUserId) || 
+      (r.targetUserName && r.targetUserName === resolvedTargetName)
+    );
     const newStrike = existingForTarget.length + 1;
     const isFlagged = newStrike >= 3;
 
     const newReport = {
       id: 'rep-' + Date.now(),
       targetUserId,
-      targetName: targetName || 'User / Partner',
-      targetRole: targetRole || 'Member',
+      targetUserName: resolvedTargetName,
+      targetName: resolvedTargetName,
+      targetUserRole: resolvedTargetRole,
+      targetRole: resolvedTargetRole,
+      reporterUserId,
       reporterName,
       date: 'Just now',
+      createdAt: new Date().toISOString(),
       reason: reason || 'Policy Violation',
       description: description || '',
       status: isFlagged ? 'Flagged (3 Strikes Reached)' : `Strike ${newStrike} Recorded`,
       strikeNumber: newStrike,
+      reportedUserStrikes: newStrike,
       actionTaken: isFlagged ? 'Account automatically flagged and suspended.' : 'Warning recorded in moderation logs.'
     };
 
     const updated = [newReport, ...userReports];
     setUserReports(updated);
     localStorage.setItem('rideflow_user_reports', JSON.stringify(updated));
+
+    // Persist strike to backend Express & MongoDB
+    api.issueStrike({
+      targetUserId,
+      targetUserName: resolvedTargetName,
+      reportedBy: `${reporterName} (${reporterUserId})`,
+      reason: reason || 'Policy Violation',
+      details: description || '',
+      severity: isFlagged ? 'critical' : 'high'
+    }).catch((err) => console.warn('[MongoDB Strike Sync Notice]', err.message));
 
     if (isFlagged) {
       flagUser(targetUserId, reason);
@@ -1202,17 +1224,34 @@ export const AuthProvider = ({ children }) => {
       id: 'app-' + Date.now(),
       userId: userId || user?.id,
       userName: userName || user?.name || 'Commuter',
+      userEmail: user?.email || '',
+      userPhone: user?.phone || '',
       userRole: userRole || user?.roleLabel || 'User',
       strikeCount: 3,
       dateSubmitted: 'Just now',
-      status: 'Pending Review',
+      createdAt: new Date().toISOString(),
+      status: 'pending',
       reasonForFlag: reasonForFlag || '3-Strike Moderation Flag',
+      reason: reasonForFlag || '3-Strike Moderation Flag',
       explanation: explanation || 'User submitted explanation.',
+      evidenceText: explanation || '',
       adminNotes: ''
     };
     const updated = [newAppeal, ...userAppeals];
     setUserAppeals(updated);
     localStorage.setItem('rideflow_user_appeals', JSON.stringify(updated));
+
+    // Persist appeal to backend MongoDB
+    api.submitAppeal({
+      id: newAppeal.id,
+      userId: newAppeal.userId,
+      userName: newAppeal.userName,
+      userEmail: newAppeal.userEmail,
+      userPhone: newAppeal.userPhone,
+      reason: newAppeal.reason,
+      evidenceText: newAppeal.explanation
+    }).catch((err) => console.warn('[MongoDB Appeal Sync Notice]', err.message));
+
     return newAppeal;
   };
 
@@ -1220,20 +1259,28 @@ export const AuthProvider = ({ children }) => {
     const targetAppeal = userAppeals.find((a) => a.id === appealId);
     if (!targetAppeal) return;
 
-    if (decisionStatus === 'Approved') {
+    const normalizedDecision = decisionStatus?.toLowerCase() === 'approved' ? 'approved' : 'rejected';
+
+    if (normalizedDecision === 'approved') {
       unflagUser(targetAppeal.userId);
     }
 
     const updated = userAppeals.map((a) =>
-      a.id === appealId ? { ...a, status: decisionStatus, adminNotes } : a
+      a.id === appealId ? { ...a, status: normalizedDecision, adminNotes } : a
     );
     setUserAppeals(updated);
     localStorage.setItem('rideflow_user_appeals', JSON.stringify(updated));
+
+    // Persist resolution to backend MongoDB
+    api.resolveAppeal(appealId, normalizedDecision, adminNotes, user?.name).catch((err) =>
+      console.warn('[MongoDB Resolve Appeal Notice]', err.message)
+    );
   };
 
   const submitSupportQuery = ({ userId, userName, userEmail, category, subject, message }) => {
+    const queryId = 'sup-' + Date.now();
     const newQuery = {
-      id: 'sup-' + Date.now(),
+      id: queryId,
       userId: userId || user?.id || 'usr_guest',
       userName: userName || user?.name || 'Commuter',
       userEmail: userEmail || user?.email || 'user@rideflow.in',
@@ -1241,12 +1288,26 @@ export const AuthProvider = ({ children }) => {
       subject: subject || 'User Query',
       message: message || '',
       date: 'Just now',
+      createdAt: new Date().toISOString(),
       status: 'open',
       adminReply: ''
     };
     const updated = [newQuery, ...supportQueries];
     setSupportQueries(updated);
     localStorage.setItem('rideflow_support_queries', JSON.stringify(updated));
+
+    // Persist support query to backend MongoDB
+    api.submitQuery({
+      id: queryId,
+      userId: newQuery.userId,
+      userName: newQuery.userName,
+      name: newQuery.userName,
+      email: newQuery.userEmail,
+      category: newQuery.category,
+      subject: newQuery.subject,
+      message: newQuery.message
+    }).catch((err) => console.warn('[MongoDB Support Query Notice]', err.message));
+
     return newQuery;
   };
 
@@ -1257,6 +1318,11 @@ export const AuthProvider = ({ children }) => {
     );
     setSupportQueries(updated);
     localStorage.setItem('rideflow_support_queries', JSON.stringify(updated));
+
+    // Persist resolution to backend MongoDB
+    api.resolveQuery(queryId, adminReply).catch((err) =>
+      console.warn('[MongoDB Resolve Query Notice]', err.message)
+    );
 
     // Send in-app notification directly to the user who submitted the ticket
     if (targetQuery) {

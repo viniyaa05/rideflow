@@ -96,9 +96,12 @@ export default function SupportModal({ onClose }) {
                     </div>
                     <p className="text-[11px] text-slate-600">{ticket.message}</p>
                     {ticket.adminReply && (
-                      <div className="p-2 rounded-xl bg-indigo-50 border border-indigo-100 text-[11px] text-indigo-900 mt-1">
-                        <strong className="block text-[10px] font-bold text-indigo-700">Admin Response:</strong>
-                        {ticket.adminReply}
+                      <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 mt-1.5 space-y-1">
+                        <div className="flex items-center gap-1.5 text-indigo-700 font-extrabold text-[11px]">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Official Admin Answer:</span>
+                        </div>
+                        <p className="text-xs text-indigo-900 font-medium pl-5">"{ticket.adminReply}"</p>
                       </div>
                     )}
                   </div>

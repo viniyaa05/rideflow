@@ -907,14 +907,5 @@
       "location": "Chennai Central"
     }
   ],
-  "bookings": [],
-  "resets": {
-    "rideflow2026@gmail.com": {
-      "otp": "800279",
-      "expiresAt": 1791211400567,
-      "attempts": 0,
-      "recipient": "rideflow2026@gmail.com",
-      "userName": "RideFlow User"
-    }
-  }
+  "bookings": []
 }

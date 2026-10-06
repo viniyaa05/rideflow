@@ -193,6 +193,29 @@ export const api = {
     }
   },
 
+  // Support: Admin resolves inquiry with official answer
+  async resolveQuery(queryId, adminReply) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/moderation/query/${queryId}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ adminReply })
+      });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
+  },
+
+  // Support: Fetch all queries
+  async getQueries() {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/moderation/queries`, { method: 'GET' });
+      return await res.json();
+    } catch {
+      return { offline: true };
+    }
+  },
+
   // Fleet: Fetch vehicles
   async getVehicles() {
     try {

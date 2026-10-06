@@ -64,6 +64,7 @@ export default function AdminView() {
   // Support reply state
   const [activeReplyId, setActiveReplyId] = useState(null);
   const [replyText, setReplyText] = useState('');
+  const [supportReplies, setSupportReplies] = useState({});
 
   // Appeal resolution state
   const [appealNotes, setAppealNotes] = useState({});
@@ -124,8 +125,10 @@ export default function AdminView() {
   };
 
   const handleSendSupportReply = (queryId) => {
-    if (!replyText.trim()) return;
-    resolveSupportQuery(queryId, replyText.trim());
+    const text = (supportReplies[queryId] || replyText || '').trim();
+    if (!text) return;
+    resolveSupportQuery(queryId, text);
+    setSupportReplies((prev) => ({ ...prev, [queryId]: '' }));
     setReplyText('');
     setActiveReplyId(null);
     showNotification('✓ Support response transmitted to user ticket inbox.');
@@ -174,7 +177,7 @@ export default function AdminView() {
             { id: 'telemetry', label: 'Central Fleet Radar', icon: Radio },
             { id: 'strikes', label: `3-Strike Reports (${userReports.length})`, icon: BadgeAlert },
             { id: 'appeals', label: `Appeals Inbox (${userAppeals.filter(a => a.status === 'pending').length} New)`, icon: UserX },
-            { id: 'support', label: `Support Desk (${supportQueries.filter(q => q.status === 'pending').length} Open)`, icon: HelpCircle },
+            { id: 'support', label: `Support Desk (${supportQueries.filter(q => q.status !== 'resolved').length} Open)`, icon: HelpCircle },
             { id: 'drivers', label: `Driver Roster (${drivers.length})`, icon: Car },
             { id: 'reviews', label: `Reviews (${reviews.length})`, icon: FileText },
             { id: 'revenue', label: 'GST Ledger', icon: TrendingUp },
@@ -362,15 +365,15 @@ export default function AdminView() {
                             STRIKE #{report.reportedUserStrikes || strikeCount}
                           </span>
                           <h4 className="text-xs font-bold text-slate-900">
-                            Target: {report.targetUserName} ({report.targetUserRole})
+                            Target: {report.targetUserName || report.targetName || 'User / Partner'} ({report.targetUserRole || report.targetRole || 'Driver'})
                           </h4>
-                          <span className="text-[10px] text-slate-400">• {new Date(report.createdAt).toLocaleDateString()}</span>
+                          <span className="text-[10px] text-slate-400">• {report.createdAt ? new Date(report.createdAt).toLocaleDateString() : (report.date || 'Recent')}</span>
                         </div>
 
                         <p className="text-xs font-bold text-rose-700">Reason: {report.reason}</p>
                         <p className="text-xs text-slate-600">"{report.description}"</p>
                         <span className="text-[10px] text-slate-400 block font-medium">
-                          Reported by Passenger ID: {report.reporterUserId} ({report.reporterName})
+                          Reported by Passenger: {report.reporterName || 'Verified Rider'} {report.reporterUserId ? `(ID: ${report.reporterUserId})` : ''}
                         </span>
                       </div>
 
@@ -562,20 +565,22 @@ export default function AdminView() {
                     )}
 
                     {query.status !== 'resolved' && (
-                      <div className="pt-2 border-t border-slate-100 flex gap-2">
+                      <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
                         <input
                           type="text"
                           placeholder="Type official response to user ticket..."
-                          value={activeReplyId === query.id ? replyText : ''}
+                          value={supportReplies[query.id] !== undefined ? supportReplies[query.id] : (activeReplyId === query.id ? replyText : '')}
                           onChange={(e) => {
                             setActiveReplyId(query.id);
                             setReplyText(e.target.value);
+                            setSupportReplies({ ...supportReplies, [query.id]: e.target.value });
                           }}
-                          className="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:bg-white"
+                          style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
+                          className="flex-1 px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-2xs"
                         />
                         <button
                           onClick={() => handleSendSupportReply(query.id)}
-                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-colors"
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
                         >
                           <Send className="w-3.5 h-3.5" />
                           <span>Reply & Resolve</span>
