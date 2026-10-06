@@ -375,7 +375,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
             
             {/* 1. Carpool Connect (OUR DIFFERENTIATOR - Marina Teal Treatment) */}
             <div 
-              onClick={onOpenLogin}
+              onClick={() => onSelectService ? onSelectService('carpool') : onOpenLogin()}
               className="p-4 rounded-2xl bg-marina/10 dark:bg-marina/20 border-2 border-marina hover:border-marina-light transition-all cursor-pointer relative group flex flex-col justify-between space-y-3"
             >
               <div className="space-y-1">
@@ -406,7 +406,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
 
             {/* 2. Solo Bike Taxi (Rickshaw Ochre) */}
             <div 
-              onClick={onOpenLogin}
+              onClick={() => onSelectService ? onSelectService('compare') : onOpenLogin()}
               className="p-4 rounded-2xl bg-sand/60 dark:bg-asphalt/60 border border-sand-border dark:border-asphalt-border hover:border-rickshaw transition-all cursor-pointer flex flex-col justify-between space-y-3"
             >
               <div className="space-y-1">
@@ -437,7 +437,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
 
             {/* 3. Private Chauffeur */}
             <div 
-              onClick={onOpenLogin}
+              onClick={() => onSelectService ? onSelectService('drivers') : onOpenLogin()}
               className="p-4 rounded-2xl bg-sand/60 dark:bg-asphalt/60 border border-sand-border dark:border-asphalt-border hover:border-rickshaw transition-all cursor-pointer flex flex-col justify-between space-y-3"
             >
               <div className="space-y-1">
@@ -468,7 +468,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
 
             {/* 4. Self-Drive Rental */}
             <div 
-              onClick={onOpenLogin}
+              onClick={() => onSelectService ? onSelectService('rentals') : onOpenLogin()}
               className="p-4 rounded-2xl bg-sand/60 dark:bg-asphalt/60 border border-sand-border dark:border-asphalt-border hover:border-rickshaw transition-all cursor-pointer flex flex-col justify-between space-y-3"
             >
               <div className="space-y-1">
@@ -543,7 +543,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
           
           {/* SERVICE 1 (HERO DIFFERENTIATOR): Carpool Connect - Spans 7 Columns */}
           <div 
-            onClick={onOpenLogin}
+            onClick={() => onSelectService ? onSelectService('carpool') : onOpenLogin()}
             className="lg:col-span-7 p-6 sm:p-8 rounded-3xl bg-marina text-sand relative overflow-hidden flex flex-col justify-between space-y-6 shadow-lg cursor-pointer group hover:brightness-105 transition-all"
           >
             <div className="space-y-3">
@@ -589,7 +589,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
 
           {/* SERVICE 2: Solo Bike Taxi - Spans 5 Columns */}
           <div 
-            onClick={onOpenLogin}
+            onClick={() => onSelectService ? onSelectService('compare') : onOpenLogin()}
             className="lg:col-span-5 p-6 sm:p-7 rounded-3xl bg-sand-card dark:bg-asphalt-card border border-sand-border dark:border-asphalt-border hover:border-rickshaw shadow-sm flex flex-col justify-between space-y-5 cursor-pointer group transition-all"
           >
             <div className="space-y-2">
@@ -621,7 +621,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
 
           {/* SERVICE 3: Private Chauffeur - Spans 4 Columns */}
           <div 
-            onClick={onOpenLogin}
+            onClick={() => onSelectService ? onSelectService('drivers') : onOpenLogin()}
             className="lg:col-span-4 p-6 sm:p-7 rounded-3xl bg-sand-card dark:bg-asphalt-card border border-sand-border dark:border-asphalt-border hover:border-rickshaw shadow-sm flex flex-col justify-between space-y-4 cursor-pointer group transition-all"
           >
             <div className="space-y-2">
@@ -653,7 +653,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
 
           {/* SERVICE 4: Bike Rentals - Spans 4 Columns */}
           <div 
-            onClick={onOpenLogin}
+            onClick={() => onSelectService ? onSelectService('rentals') : onOpenLogin()}
             className="lg:col-span-4 p-6 sm:p-7 rounded-3xl bg-sand-card dark:bg-asphalt-card border border-sand-border dark:border-asphalt-border hover:border-rickshaw shadow-sm flex flex-col justify-between space-y-4 cursor-pointer group transition-all"
           >
             <div className="space-y-2">
@@ -685,7 +685,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
 
           {/* SERVICE 5: Self-Drive Fleet - Spans 4 Columns */}
           <div 
-            onClick={onOpenLogin}
+            onClick={() => onSelectService ? onSelectService('rentals') : onOpenLogin()}
             className="lg:col-span-4 p-6 sm:p-7 rounded-3xl bg-sand-card dark:bg-asphalt-card border border-sand-border dark:border-asphalt-border hover:border-rickshaw shadow-sm flex flex-col justify-between space-y-4 cursor-pointer group transition-all"
           >
             <div className="space-y-2">

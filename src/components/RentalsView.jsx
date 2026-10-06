@@ -74,7 +74,7 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
       .map((car) => {
         const carLat = car.gpsLocation?.lat || 13.0827;
         const carLng = car.gpsLocation?.lng || 80.2707;
-        const distance = calculateDistanceKm(userHub.lat, userHub.lng, carLat, carLng);
+        const distance = calculateDistanceKm(userHub?.lat || 13.0827, userHub?.lng || 80.2707, carLat, carLng);
         const estTime = estimateWalkingOrDrivingTime(distance);
 
         return {
@@ -170,7 +170,7 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
               <select
                 value={userHub.id}
                 onChange={(e) => {
-                  const found = TN_TRANSIT_HUBS.find(h => h.id === e.target.value);
+                  const found = TN_TRANSIT_HUBS.find(hub => hub.id === e.target.value);
                   if (found) {
                     setUserHub(found);
                     setIsUsingDeviceGps(false);

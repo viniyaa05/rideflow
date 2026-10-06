@@ -24,24 +24,6 @@ function MainApp() {
   const { currentThemeMeta } = useTheme();
   const { t } = useLanguage();
   
-  const isSuperAdmin = Boolean(
-    user &&
-    (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
-    (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
-  );
-
-  // If non-admin user attempts to access admin tab, redirect to dashboard
-  useEffect(() => {
-    if (activeTab === 'admin' && !isSuperAdmin) {
-      setActiveTab('dashboard');
-    }
-  }, [activeTab, isSuperAdmin]);
-  
-  // Login modal / Gateway toggle when unauthenticated
-  const [showLoginModal, setShowLoginModal] = useState(() => {
-    return window.location.hash === '#login';
-  });
-
   // Navigation tab state: 'dashboard' | 'compare' | 'rentals' | 'drivers' | 'carpool' | 'reviews' | 'partner' | 'admin'
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
@@ -55,6 +37,28 @@ function MainApp() {
     to: 'OMR IT Expressway - Sholinganallur (600119)'
   });
 
+  // Modal states
+  const [chatConfig, setChatConfig] = useState(null); // { recipient, type: 'driver' | 'host' }
+  const [bookingItem, setBookingItem] = useState(null); // { mode, title, price, details }
+
+  // Login modal / Gateway toggle when unauthenticated
+  const [showLoginModal, setShowLoginModal] = useState(() => {
+    return window.location.hash === '#login';
+  });
+
+  const isSuperAdmin = Boolean(
+    user &&
+    (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
+    (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
+  );
+
+  // If non-admin user attempts to access admin tab, redirect to dashboard
+  useEffect(() => {
+    if (activeTab === 'admin' && !isSuperAdmin) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, isSuperAdmin]);
+
   // Auto-adapt sidebar state on window resize
   useEffect(() => {
     const handleResize = () => {
@@ -67,10 +71,6 @@ function MainApp() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  // Modal states
-  const [chatConfig, setChatConfig] = useState(null); // { recipient, type: 'driver' | 'host' }
-  const [bookingItem, setBookingItem] = useState(null); // { mode, title, price, details }
 
   // Browser History & PopState Listener (Supports physical browser back button)
   useEffect(() => {
@@ -134,6 +134,9 @@ function MainApp() {
       <LandingPage
         onOpenLogin={handleOpenLogin}
         onSelectService={(mode) => {
+          if (mode) {
+            setActiveTab(mode === 'rental' ? 'rentals' : mode);
+          }
           handleOpenLogin();
         }}
       />
