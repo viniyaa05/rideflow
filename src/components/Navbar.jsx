@@ -257,29 +257,60 @@ export default function Navbar({ activeTab, setActiveTab, isSidebarOpen, onToggl
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                      {notifications.map((n) => (
-                        <div
-                          key={n.id}
-                          onClick={() => markNotificationAsRead(n.id)}
-                          className={`p-3 rounded-2xl border text-xs transition-all cursor-pointer space-y-1.5 ${
-                            !n.read
-                              ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 shadow-2xs'
-                              : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 opacity-80'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="font-bold text-slate-900 dark:text-white leading-tight">{n.title}</span>
-                            <span className="text-[10px] text-slate-400 whitespace-nowrap">{n.time}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">{n.message}</p>
-                          {n.senderPhone && (
-                            <div className="pt-1.5 border-t border-slate-200/70 dark:border-slate-700 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                              <span>Passenger: <strong className="text-slate-800 dark:text-slate-200">{n.senderPhone}</strong></span>
-                              <span className="text-emerald-700 dark:text-emerald-400 font-extrabold departure-digit">+₹{n.fare}</span>
+                      {notifications.map((n) => {
+                        const isSupportNotif = n.type === 'support_resolved';
+                        return (
+                          <div
+                            key={n.id}
+                            onClick={() => markNotificationAsRead(n.id)}
+                            className={`p-3.5 rounded-2xl border text-xs transition-all cursor-pointer space-y-2 ${
+                              !n.read
+                                ? isSupportNotif
+                                  ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-700 shadow-sm ring-1 ring-emerald-300/40'
+                                  : 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 shadow-2xs'
+                                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 opacity-80'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {isSupportNotif ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 uppercase">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                                    Admin Support Answer
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-800 dark:text-indigo-300">
+                                    Notification
+                                  </span>
+                                )}
+                                {!n.read && (
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 whitespace-nowrap">{n.time}</span>
                             </div>
-                          )}
-                        </div>
-                      ))}
+
+                            <div>
+                              <h5 className="font-extrabold text-slate-900 dark:text-white leading-tight">{n.title}</h5>
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">{n.message}</p>
+                            </div>
+
+                            {n.reply && (
+                              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900/90 border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-950 dark:text-emerald-200 shadow-2xs">
+                                <span className="font-extrabold text-[10px] text-emerald-700 dark:text-emerald-400 block mb-0.5">Official Admin Response:</span>
+                                <span>"{n.reply}"</span>
+                              </div>
+                            )}
+
+                            {n.senderPhone && (
+                              <div className="pt-1.5 border-t border-slate-200/70 dark:border-slate-700 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                                <span>Passenger: <strong className="text-slate-800 dark:text-slate-200">{n.senderPhone}</strong></span>
+                                <span className="text-emerald-700 dark:text-emerald-400 font-extrabold departure-digit">+₹{n.fare}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

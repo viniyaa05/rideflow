@@ -67,6 +67,7 @@ export default function Dashboard({ setActiveTab, onQuickBookRoute, onOpenChat }
   };
 
   const unreadHostNotifs = notifications.filter((n) => !n.read && n.type === 'new_booking');
+  const unreadSupportNotifs = notifications.filter((n) => !n.read && n.type === 'support_resolved');
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
@@ -137,6 +138,72 @@ export default function Dashboard({ setActiveTab, onQuickBookRoute, onOpenChat }
           </div>
         </div>
       </div>
+
+      {/* Super Admin Support Answer Alert Banner */}
+      {unreadSupportNotifs.length > 0 && (
+        <div className="p-5 rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 shadow-sm space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Support Desk: Super Admin replied to your ticket ({unreadSupportNotifs.length})</span>
+              </h3>
+            </div>
+            <button
+              onClick={() => setShowSupportModal(true)}
+              className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>View All in Support Desk</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {unreadSupportNotifs.map((notif) => (
+              <div
+                key={notif.id}
+                className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800 shadow-xs space-y-2 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="text-xs font-extrabold text-slate-900 dark:text-white leading-snug">
+                      {notif.title}
+                    </h4>
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">{notif.time}</span>
+                  </div>
+                  {notif.reply ? (
+                    <div className="mt-2 p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-800 text-[11px] text-emerald-950 dark:text-emerald-200">
+                      <span className="font-extrabold text-[10px] text-emerald-700 dark:text-emerald-400 block mb-0.5">Official Response:</span>
+                      "{notif.reply}"
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">{notif.message}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    onClick={() => {
+                      markNotificationAsRead(notif.id);
+                      setShowSupportModal(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Open Ticket
+                  </button>
+                  <button
+                    onClick={() => markNotificationAsRead(notif.id)}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Acknowledge
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Host Passenger Reservation Alert Banner */}
       {unreadHostNotifs.length > 0 && (

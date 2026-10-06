@@ -2,6 +2,9 @@ import mongoose from 'mongoose';
 
 const SupportQuerySchema = new mongoose.Schema({
   id: { type: String, unique: true, required: true },
+  userId: { type: String },
+  userName: { type: String },
+  userEmail: { type: String },
   name: { type: String, required: true },
   email: { type: String, required: true },
   phone: { type: String },

@@ -24,7 +24,18 @@ function MainApp() {
   const { currentThemeMeta } = useTheme();
   const { t } = useLanguage();
   
-  const isAdminUser = Boolean(user?.isAdmin || user?.role === 'SUPER_ADMIN' || user?.role === 'admin');
+  const isSuperAdmin = Boolean(
+    user &&
+    (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
+    (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
+  );
+
+  // If non-admin user attempts to access admin tab, redirect to dashboard
+  useEffect(() => {
+    if (activeTab === 'admin' && !isSuperAdmin) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, isSuperAdmin]);
   
   // Login modal / Gateway toggle when unauthenticated
   const [showLoginModal, setShowLoginModal] = useState(() => {
@@ -202,7 +213,7 @@ function MainApp() {
           )}
 
           {activeTab === 'admin' && (
-            isAdminUser ? <AdminView /> : <Dashboard setActiveTab={setActiveTab} onQuickBookRoute={handleQuickBookRoute} onOpenChat={handleOpenChat} />
+            isSuperAdmin ? <AdminView /> : <Dashboard setActiveTab={setActiveTab} onQuickBookRoute={handleQuickBookRoute} onOpenChat={handleOpenChat} />
           )}
         </main>
 

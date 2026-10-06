@@ -49,7 +49,11 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, setIsOpen]);
 
-  const isAdminUser = Boolean(user?.isAdmin || user?.role === 'SUPER_ADMIN' || user?.role === 'admin');
+  const isSuperAdmin = Boolean(
+    user &&
+    (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
+    (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
+  );
 
   const navItems = [
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard, badge: null },
@@ -59,7 +63,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
     { id: 'carpool', label: t('carpool'), icon: Users, badge: 'Popular' },
     { id: 'reviews', label: t('reviews'), icon: Star, badge: null },
     { id: 'partner', label: t('partnerHub'), icon: Briefcase, badge: 'Host' },
-    { id: 'admin', label: t('adminConsole'), icon: ShieldAlert, badge: 'Admin' }
+    ...(isSuperAdmin ? [{ id: 'admin', label: t('adminConsole'), icon: ShieldAlert, badge: 'Admin' }] : [])
   ];
 
   const handleTopUpSubmit = (e) => {
@@ -207,9 +211,6 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
               <button
                 key={item.id}
                 onClick={() => {
-                  if (item.id === 'admin' && !isAdminUser) {
-                    switchPersona('usr_super_admin');
-                  }
                   setActiveTab(item.id);
                   if (window.innerWidth < 1024) {
                     setIsOpen(false);
@@ -368,7 +369,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
             </div>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {personas.map((p) => {
+              {personas
+                .filter((p) => p.id !== 'usr_super_admin' && p.role !== 'SUPER_ADMIN' && p.email?.toLowerCase() !== 'admin@rideflow.in')
+                .map((p) => {
                 const isCurrent = user?.id === p.id;
                 return (
                   <button

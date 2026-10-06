@@ -243,11 +243,12 @@ export const AuthProvider = ({ children }) => {
         const res = await api.checkHealth();
         setDbStatus(res);
 
-        // Live-sync vehicles, rentals, carpools, and drivers from backend database
-        const [rentalsRes, carpoolsRes, driversRes] = await Promise.all([
+        // Live-sync vehicles, rentals, carpools, drivers, and support queries from backend database
+        const [rentalsRes, carpoolsRes, driversRes, queriesRes] = await Promise.all([
           api.getRentals(),
           api.getCarpools(),
-          api.getDrivers()
+          api.getDrivers(),
+          api.getQueries()
         ]);
 
         if (rentalsRes && rentalsRes.success && rentalsRes.rentals?.length > 0) {
@@ -270,6 +271,14 @@ export const AuthProvider = ({ children }) => {
           setDrivers((prev) => {
             const map = new Map();
             [...driversRes.drivers, ...prev].forEach(d => map.set(d.id, d));
+            return Array.from(map.values());
+          });
+        }
+
+        if (queriesRes && queriesRes.success && queriesRes.queries?.length > 0) {
+          setSupportQueries((prev) => {
+            const map = new Map();
+            [...queriesRes.queries, ...prev].forEach(q => map.set(q.id, q));
             return Array.from(map.values());
           });
         }
@@ -383,8 +392,21 @@ export const AuthProvider = ({ children }) => {
   // Full Persona Roster including Super Admin
   const ALL_PERSONAS = [...SEEDED_PERSONAS, ADMIN_CREDENTIALS];
 
-  // 1-Click Switch Persona (Among Commuters and Super Admin)
+  // 1-Click Switch Persona (Restricted to commuters; root admin cannot be hijacked via switch)
   const switchPersona = (personaId) => {
+    const isTargetSuperAdmin = personaId === 'usr_super_admin' || personaId === ADMIN_CREDENTIALS.id;
+    const isCurrentSuperAdmin = Boolean(
+      user &&
+      (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
+      (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
+    );
+
+    // If a regular user tries to switch to admin, deny
+    if (isTargetSuperAdmin && !isCurrentSuperAdmin) {
+      console.warn('[Security] Unauthorized attempt to switch to Super Admin persona.');
+      return user;
+    }
+
     const targetPersona = ALL_PERSONAS.find((p) => p.id === personaId) || SEEDED_PERSONAS[0];
     setUser(targetPersona);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(targetPersona));
@@ -411,8 +433,14 @@ export const AuthProvider = ({ children }) => {
     try {
       const loginRes = await api.login(normalizedEmail, inputPassword);
       if (loginRes && loginRes.success && loginRes.user) {
+        const isBackendAdmin = Boolean(
+          (loginRes.user.email?.toLowerCase() === 'admin@rideflow.in' || loginRes.user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in' || loginRes.user.id === 'usr_super_admin') &&
+          (loginRes.user.role === 'SUPER_ADMIN' || loginRes.user.isAdmin === true)
+        );
         const backendUser = {
           ...loginRes.user,
+          isAdmin: isBackendAdmin,
+          role: isBackendAdmin ? 'SUPER_ADMIN' : (loginRes.user.role || 'user'),
           walletBalance: loginRes.user.walletBalance || 500,
           stats: loginRes.user.stats || { totalTrips: 4, co2SavedKg: 9.6, moneySavedRupees: 420 }
         };
@@ -433,8 +461,8 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    // 1. Check if matching Admin credentials
-    if (normalizedEmail === ADMIN_CREDENTIALS.email.toLowerCase()) {
+    // 1. Check if matching Admin credentials (Only the single dedicated root administrator)
+    if (normalizedEmail === ADMIN_CREDENTIALS.email.toLowerCase() || normalizedEmail === 'admin@rideflow.tn.gov.in') {
       if (inputPassword !== ADMIN_CREDENTIALS.password) {
         setIsLoading(false);
         throw new Error('Incorrect Admin password. Please enter the valid administrator password.');
@@ -1326,16 +1354,23 @@ export const AuthProvider = ({ children }) => {
 
     // Send in-app notification directly to the user who submitted the ticket
     if (targetQuery) {
+      const recipientId = targetQuery.userId || 'all';
+      const recipientEmail = targetQuery.userEmail || targetQuery.email || '';
+      const recipientName = targetQuery.userName || targetQuery.name || 'Commuter';
+
       const userNotif = {
         id: 'notif-sup-' + Date.now(),
-        recipientUserId: targetQuery.userId || 'all',
-        recipientName: targetQuery.userName || 'Commuter',
-        senderUserId: 'usr_admin_tn',
+        queryId: targetQuery.id,
+        recipientUserId: recipientId,
+        recipientEmail: recipientEmail,
+        recipientName: recipientName,
+        senderUserId: 'usr_super_admin',
         senderName: 'RideFlow Support Admin Desk',
         senderAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
         type: 'support_resolved',
-        title: `✅ Support Ticket Resolved: ${targetQuery.subject}`,
+        title: `✅ Support Ticket Resolved: ${targetQuery.subject || 'Support Query'}`,
         message: `Admin Response: "${adminReply || 'Your issue has been investigated and resolved.'}"`,
+        reply: adminReply,
         time: 'Just now',
         read: false,
         createdAt: new Date().toISOString()
@@ -1401,13 +1436,91 @@ export const AuthProvider = ({ children }) => {
     setReviews((prev) => prev.filter((r) => r.id !== reviewId));
   };
 
-  const userNotifications = notifications.filter(
-    (n) =>
-      n.recipientUserId === user?.id ||
-      n.recipientName === user?.name ||
-      n.recipientUserId === 'all' ||
-      (user?.isHost && n.type === 'new_booking')
-  );
+  // Ensure user receives notification whenever an admin resolves their support ticket
+  useEffect(() => {
+    if (!user) return;
+    const userEmailLower = user.email?.trim().toLowerCase();
+    const userNameLower = user.name?.trim().toLowerCase();
+
+    setNotifications((prevNotifs) => {
+      let changed = false;
+      const updated = [...prevNotifs];
+
+      supportQueries.forEach((q) => {
+        if (q.status === 'resolved' && q.adminReply) {
+          const isUserQuery =
+            (q.userId && user.id && q.userId === user.id) ||
+            (q.userEmail && userEmailLower && q.userEmail.trim().toLowerCase() === userEmailLower) ||
+            (q.email && userEmailLower && q.email.trim().toLowerCase() === userEmailLower) ||
+            (q.userName && userNameLower && q.userName.trim().toLowerCase() === userNameLower) ||
+            (q.name && userNameLower && q.name.trim().toLowerCase() === userNameLower);
+
+          if (isUserQuery) {
+            const alreadyHasNotif = updated.some(
+              (n) => n.queryId === q.id || n.id === `notif-sup-${q.id}`
+            );
+            if (!alreadyHasNotif) {
+              updated.unshift({
+                id: `notif-sup-${q.id}`,
+                queryId: q.id,
+                recipientUserId: user.id,
+                recipientEmail: user.email,
+                recipientName: user.name,
+                senderUserId: 'usr_super_admin',
+                senderName: 'RideFlow Support Admin Desk',
+                senderAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+                type: 'support_resolved',
+                title: `✅ Support Ticket Resolved: ${q.subject || 'Support Query'}`,
+                message: `Admin Response: "${q.adminReply}"`,
+                reply: q.adminReply,
+                time: 'Just now',
+                read: false,
+                createdAt: q.createdAt || new Date().toISOString()
+              });
+              changed = true;
+            }
+          }
+        }
+      });
+
+      if (changed) {
+        localStorage.setItem('rideflow_notifications', JSON.stringify(updated));
+        return updated;
+      }
+      return prevNotifs;
+    });
+  }, [user?.id, user?.email, supportQueries]);
+
+  const userNotifications = notifications.filter((n) => {
+    // Broadcast notifications to all users
+    if (n.recipientUserId === 'all') return true;
+
+    // Direct match by user id
+    if (n.recipientUserId && user?.id && n.recipientUserId === user.id) return true;
+
+    // Direct match by user email
+    if (
+      n.recipientEmail &&
+      user?.email &&
+      n.recipientEmail.trim().toLowerCase() === user.email.trim().toLowerCase()
+    ) {
+      return true;
+    }
+
+    // Direct match by user display name
+    if (
+      n.recipientName &&
+      user?.name &&
+      n.recipientName.trim().toLowerCase() === user.name.trim().toLowerCase()
+    ) {
+      return true;
+    }
+
+    // Host passenger reservations
+    if (user?.isHost && n.type === 'new_booking') return true;
+
+    return false;
+  });
 
   const unreadNotifCount = userNotifications.filter((n) => !n.read).length;
 
@@ -1416,7 +1529,7 @@ export const AuthProvider = ({ children }) => {
       value={{
         user,
         jwtToken,
-        personas: ALL_PERSONAS,
+        personas: SEEDED_PERSONAS,
         adminCredentials: ADMIN_CREDENTIALS,
         switchPersona,
         recentlyAccessed,

@@ -153,6 +153,7 @@ router.post('/appeal/:id/resolve', async (req, res) => {
 router.post('/query', async (req, res) => {
   try {
     const queryId = req.body.id || ('sup_' + Date.now());
+    const userId = req.body.userId || '';
     const name = req.body.name || req.body.userName || 'Commuter';
     const email = req.body.email || req.body.userEmail || 'user@rideflow.in';
     const phone = req.body.phone || req.body.userPhone || '';
@@ -162,6 +163,9 @@ router.post('/query', async (req, res) => {
 
     const newQuery = {
       id: queryId,
+      userId,
+      userName: name,
+      userEmail: email,
       name,
       email,
       phone,

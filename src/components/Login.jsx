@@ -64,7 +64,7 @@ export default function Login({ onBackToLanding }) {
 
   // Admin Form State
   const [adminData, setAdminData] = useState({
-    email: 'admin@rideflow.tn.gov.in',
+    email: 'admin@rideflow.in',
     password: 'admin123'
   });
 
@@ -575,7 +575,7 @@ export default function Login({ onBackToLanding }) {
                         required
                         value={adminData.email}
                         onChange={(e) => setAdminData({ ...adminData, email: e.target.value })}
-                        placeholder="admin@rideflow.tn.gov.in"
+                        placeholder="admin@rideflow.in"
                         style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
                         className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-purple-400 shadow-xs"
                       />
