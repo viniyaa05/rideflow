@@ -112,7 +112,7 @@ export default function Login({ onBackToLanding }) {
     try {
       await loginWithGoogle(chosenAccount);
     } catch (err) {
-      setErrorMsg('Google OAuth authentication failed.');
+      setErrorMsg(err.message || 'Google OAuth authentication failed.');
     }
   };
 

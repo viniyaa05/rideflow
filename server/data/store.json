@@ -1,6 +1,27 @@
 {
   "users": [
     {
+      "id": "usr_g_1791542173266",
+      "name": "Test User",
+      "phone": "+91 98401 44705",
+      "email": "test.user@gmail.com",
+      "password": "oauth_google_0.exjd52qb6t7",
+      "role": "user",
+      "avatar": "https://ui-avatars.com/api/?name=Test%20User&background=4285F4&color=fff",
+      "oauthProvider": "google",
+      "rating": 5,
+      "tripsCount": 0,
+      "walletBalance": 500,
+      "strikes": 0,
+      "isSuspended": false,
+      "suspensionReason": null,
+      "appealStatus": "none",
+      "createdAt": "2026-10-09T10:36:13.266Z",
+      "_id": "6ac8c39d77831903a700fcd5",
+      "updatedAt": "2026-10-09T10:36:13.266Z",
+      "__v": 0
+    },
+    {
       "id": "usr_1791349628697",
       "name": "antonviniyaasatish",
       "phone": "+91 98401 98442",
@@ -4194,12 +4215,5 @@
       "refundAmount": 125,
       "createdAt": "2026-10-06T18:38:58.846Z"
     }
-  ],
-  "resets": {
-    "kaviniyaa05@gmail.com": {
-      "otp": "299809",
-      "expiresAt": 1791478154233,
-      "userId": "usr_1791311748393"
-    }
-  }
+  ]
 }
