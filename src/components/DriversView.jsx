@@ -23,6 +23,8 @@ import { getLiveRating } from '../utils/ratings';
 import { calculateDistanceKm, estimateWalkingOrDrivingTime, TN_TRANSIT_HUBS } from '../utils/geoUtils';
 import ReportModal from './ReportModal';
 import LiveTrackingModal from './LiveTrackingModal';
+import LocationAutocomplete from './LocationAutocomplete';
+import { Calendar } from 'lucide-react';
 
 export default function DriversView({ onOpenChat, onRequestDriver }) {
   const { drivers, reviews } = useAuth();
@@ -144,6 +146,16 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
       });
   }, [drivers, reviews, searchName, minRating, sortBy, vehicleFilter, userHub]);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+
+  const totalPages = Math.ceil(filteredDrivers.length / (pageSize === 'all' ? (filteredDrivers.length || 1) : pageSize));
+  const displayedDrivers = useMemo(() => {
+    if (pageSize === 'all') return filteredDrivers;
+    const start = (currentPage - 1) * pageSize;
+    return filteredDrivers.slice(start, start + pageSize);
+  }, [filteredDrivers, currentPage, pageSize]);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
       
@@ -153,13 +165,13 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-extrabold uppercase tracking-wider mb-2">
               <Car className="w-3.5 h-3.5" />
-              Tamil Nadu Chauffeur & Bike Taxi Dispatch
+              Tamil Nadu Driver with Vehicle Fleet
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Book Private Drivers & Solo Bike Taxis
+              Ride with Driver • Driver with Vehicle (Car & Bike)
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 font-medium">
-              Swift Dzire, Innova Crysta XL, and rapid Solo Bike Taxis with verified captain ratings, 4-digit Ride Start OTP, and live telemetry.
+              Book certified drivers with vehicles across Tamil Nadu: Car with Driver (AC/Non-AC, 1-6 seats) or Bike with Driver (Solo Bike Taxi) with verified captain ratings, 4-digit Ride Start OTP, and live telemetry.
             </p>
           </div>
 
@@ -171,6 +183,28 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
 
         {/* Live Corridor Fare Calculator Bar */}
         <div className="p-4 sm:p-6 rounded-2xl bg-slate-900 text-white space-y-4 shadow-xl">
+          {/* All-India Route Inputs */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-3 border-b border-slate-800">
+            <div>
+              <LocationAutocomplete
+                label="Pickup Location (All-India)"
+                value={fromRoute}
+                onChange={setFromRoute}
+                placeholder="Type pickup city, airport, station..."
+                icon={MapPin}
+              />
+            </div>
+            <div>
+              <LocationAutocomplete
+                label="Drop-off Destination (All-India)"
+                value={toRoute}
+                onChange={setToRoute}
+                placeholder="Type destination..."
+                icon={Navigation}
+              />
+            </div>
+          </div>
+
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <span className="text-[10px] uppercase tracking-wider font-extrabold text-cyan-400 block">
@@ -184,10 +218,10 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
             {/* Tier Selector */}
             <div className="flex items-center gap-1.5 bg-slate-800 p-1 rounded-xl overflow-x-auto">
               {[
-                { id: 'bike', label: 'Bike Taxi', icon: Bike, desc: 'Solo Fast' },
-                { id: 'economy', label: 'Swift Sedan', icon: Car, desc: '4 Seats' },
-                { id: 'comfort', label: 'Prime Sedan', icon: Car, desc: 'Premium' },
-                { id: 'xl', label: 'Innova XL', icon: Car, desc: '6 Seats' },
+                { id: 'bike', label: 'Bike Taxi (2-Wheeler)', icon: Bike, desc: 'Solo Fast' },
+                { id: 'economy', label: 'Swift Sedan (Car)', icon: Car, desc: '4 Seats' },
+                { id: 'comfort', label: 'Prime Sedan (Car)', icon: Car, desc: 'Premium' },
+                { id: 'xl', label: 'Innova XL (Car)', icon: Car, desc: '6 Seats' },
               ].map((tier) => {
                 const isSelected = selectedTier === tier.id;
                 const Icon = tier.icon;
@@ -228,24 +262,56 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
                 <span className="text-[10px] text-slate-400 block font-medium">5% GST included</span>
               </div>
 
-              <button
-                onClick={() => {
-                  if (onRequestDriver) {
-                    onRequestDriver({
-                      mode: selectedTier === 'bike' ? 'Bike Taxi' : 'Book a Driver',
-                      title: `${selectedTier === 'bike' ? 'Solo Bike Taxi' : 'Chauffeur Cab'} (${fromRoute.split('(')[0].trim()} to ${toRoute.split('(')[0].trim()})`,
-                      price: liveFare.total,
-                      details: `Direct Dispatch • ~${liveFare.etaMinutes} mins • OTP: 4892`,
-                      driverOrHost: selectedTier === 'bike' ? 'Rajesh Kumar (Royal Enfield Hunter 350)' : 'Karthik Selvam (Innova Crysta)',
-                      vehicle: selectedTier === 'bike' ? 'Royal Enfield Hunter 350' : 'Toyota Innova Crysta',
-                      rideOtp: '4892'
-                    });
-                  }
-                }}
-                className="py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs shadow-lg transition-all"
-              >
-                Request Dispatch Now
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Book Now */}
+                <button
+                  onClick={() => {
+                    if (onRequestDriver) {
+                      onRequestDriver({
+                        mode: selectedTier === 'bike' ? 'Ride with Driver (Two-Wheeler)' : 'Ride with Driver (Car)',
+                        title: `${selectedTier === 'bike' ? 'Solo Bike Taxi' : 'Chauffeur Cab'} (${fromRoute.split('(')[0].trim()} to ${toRoute.split('(')[0].trim()})`,
+                        price: liveFare.total,
+                        details: `Direct Dispatch • ~${liveFare.etaMinutes} mins • OTP: 4892`,
+                        driverOrHost: selectedTier === 'bike' ? 'Rajesh Kumar (Royal Enfield Hunter 350)' : 'Karthik Selvam (Innova Crysta)',
+                        vehicle: selectedTier === 'bike' ? 'Royal Enfield Hunter 350' : 'Toyota Innova Crysta',
+                        driverVehicleType: selectedTier === 'bike' ? 'two-wheeler' : 'car',
+                        isScheduled: false,
+                        pickupLocation: fromRoute,
+                        dropoffLocation: toRoute,
+                        rideOtp: '4892'
+                      });
+                    }
+                  }}
+                  className="py-2.5 px-3.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-extrabold text-xs shadow-lg transition-all cursor-pointer whitespace-nowrap"
+                >
+                  ⚡ Book Now
+                </button>
+
+                {/* Schedule For Later */}
+                <button
+                  onClick={() => {
+                    if (onRequestDriver) {
+                      onRequestDriver({
+                        mode: selectedTier === 'bike' ? 'Ride with Driver (Two-Wheeler)' : 'Ride with Driver (Car)',
+                        title: `${selectedTier === 'bike' ? 'Solo Bike Taxi' : 'Chauffeur Cab'} (${fromRoute.split('(')[0].trim()} to ${toRoute.split('(')[0].trim()})`,
+                        price: liveFare.total,
+                        details: `Scheduled Dispatch • ~${liveFare.etaMinutes} mins • OTP: 4892`,
+                        driverOrHost: selectedTier === 'bike' ? 'Rajesh Kumar (Royal Enfield Hunter 350)' : 'Karthik Selvam (Innova Crysta)',
+                        vehicle: selectedTier === 'bike' ? 'Royal Enfield Hunter 350' : 'Toyota Innova Crysta',
+                        driverVehicleType: selectedTier === 'bike' ? 'two-wheeler' : 'car',
+                        isScheduled: true,
+                        pickupLocation: fromRoute,
+                        dropoffLocation: toRoute,
+                        rideOtp: '4892'
+                      });
+                    }
+                  }}
+                  className="py-2.5 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-lg transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Schedule</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -358,145 +424,242 @@ export default function DriversView({ onOpenChat, onRequestDriver }) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredDrivers.map((driver) => {
-            const isBikeCaptain = driver.category === 'bike' || driver.type === 'bike' || driver.vehicleModel?.toLowerCase().includes('enfield') || driver.vehicleModel?.toLowerCase().includes('jupiter') || driver.name?.toLowerCase().includes('rajesh');
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {displayedDrivers.map((driver) => {
+              const isBikeCaptain = driver.category === 'bike' || driver.type === 'bike' || driver.vehicleModel?.toLowerCase().includes('enfield') || driver.vehicleModel?.toLowerCase().includes('jupiter') || driver.name?.toLowerCase().includes('rajesh');
 
-            return (
-              <div
-                key={driver.id}
-                className="glass-panel rounded-3xl p-5 border border-slate-200 bg-white hover:shadow-xl transition-all group flex flex-col justify-between space-y-4"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <img
-                          src={driver.avatar}
-                          alt={driver.name}
-                          className="w-12 h-12 rounded-2xl object-cover ring-2 ring-blue-100 group-hover:scale-105 transition-transform"
-                        />
-                        <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
+              return (
+                <div
+                  key={driver.id}
+                  className="glass-panel rounded-3xl p-5 border border-slate-200 bg-white hover:shadow-xl transition-all group flex flex-col justify-between space-y-4"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <img
+                            src={driver.avatar}
+                            alt={driver.name}
+                            className="w-12 h-12 rounded-2xl object-cover ring-2 ring-blue-100 group-hover:scale-105 transition-transform"
+                          />
+                          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-extrabold text-slate-900 group-hover:text-blue-600 transition-colors">
+                            {driver.name}
+                          </h4>
+                          <span className="font-mono text-[11px] text-slate-500 font-bold block">
+                            {driver.licensePlate}
+                          </span>
+                        </div>
+                      </div>
+
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
+                        isBikeCaptain ? 'bg-cyan-50 text-cyan-800 border border-cyan-200' : 'bg-blue-50 text-blue-800 border border-blue-200'
+                      }`}>
+                        {isBikeCaptain ? <Bike className="w-3 h-3 text-cyan-600" /> : <Car className="w-3 h-3 text-blue-600" />}
+                        {driver.categoryName?.split('(')[0] || (isBikeCaptain ? 'Solo Bike' : 'Chauffeur Cab')}
+                      </span>
+                    </div>
+
+                    {/* Proximity Distance Badge */}
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs font-extrabold">
+                      <Compass className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                      <span>📍 {driver.calculatedDistanceKm} km away</span>
+                      <span className="text-blue-400">•</span>
+                      <span className="text-blue-700 font-medium">~{driver.calculatedEtaMins} mins ETA</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 my-3 p-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs">
+                      <div>
+                        <span className="text-[10px] text-slate-400 font-semibold block">Rating</span>
+                        <span className="font-extrabold text-slate-900">★ {driver.liveRating.rating}</span>
+                      </div>
+                      <div className="border-x border-slate-200">
+                        <span className="text-[10px] text-slate-400 font-semibold block">Trips</span>
+                        <span className="font-bold text-slate-800 departure-digit">{driver.trips}</span>
                       </div>
                       <div>
-                        <h4 className="text-sm font-extrabold text-slate-900 group-hover:text-blue-600 transition-colors">
-                          {driver.name}
-                        </h4>
-                        <span className="font-mono text-[11px] text-slate-500 font-bold block">
-                          {driver.licensePlate}
-                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold block">Pickup ETA</span>
+                        <span className="font-extrabold text-emerald-600 font-mono">~{driver.calculatedEtaMins}m</span>
                       </div>
                     </div>
 
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
-                      isBikeCaptain ? 'bg-cyan-50 text-cyan-800 border border-cyan-200' : 'bg-blue-50 text-blue-800 border border-blue-200'
-                    }`}>
-                      {isBikeCaptain ? <Bike className="w-3 h-3 text-cyan-600" /> : <Car className="w-3 h-3 text-blue-600" />}
-                      {driver.categoryName?.split('(')[0] || (isBikeCaptain ? 'Solo Bike' : 'Chauffeur Cab')}
-                    </span>
+                    <p className="text-xs text-slate-600 font-medium">
+                      Vehicle: <strong className="text-slate-800">{driver.vehicleModel}</strong> • {driver.city || 'Tamil Nadu'}
+                    </p>
                   </div>
 
-                  {/* Proximity Distance Badge */}
-                  <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs font-extrabold">
-                    <Compass className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
-                    <span>📍 {driver.calculatedDistanceKm} km away</span>
-                    <span className="text-blue-400">•</span>
-                    <span className="text-blue-700 font-medium">~{driver.calculatedEtaMins} mins ETA</span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 my-3 p-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-center text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-semibold block">Rating</span>
-                      <span className="font-extrabold text-slate-900">★ {driver.liveRating.rating}</span>
-                    </div>
-                    <div className="border-x border-slate-200">
-                      <span className="text-[10px] text-slate-400 font-semibold block">Trips</span>
-                      <span className="font-bold text-slate-800 departure-digit">{driver.trips}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-semibold block">Pickup ETA</span>
-                      <span className="font-extrabold text-emerald-600 font-mono">~{driver.calculatedEtaMins}m</span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-slate-600 font-medium">
-                    Vehicle: <strong className="text-slate-800">{driver.vehicleModel}</strong> • {driver.city || 'Tamil Nadu'}
-                  </p>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    {/* Report Driver Button */}
-                    <button
-                      onClick={() => setReportingDriver(driver)}
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 transition-colors"
-                      title="Report Driver (3-Strike Policy)"
-                    >
-                      <ShieldAlert className="w-4 h-4" />
-                    </button>
-
-                    {/* Live Telemetry Radar */}
-                    <button
-                      onClick={() => setTrackingDriver({
-                        title: driver.vehicleModel,
-                        vehicle: driver.vehicleModel,
-                        driverName: driver.name,
-                        driverAvatar: driver.avatar,
-                        rideOtp: '4892',
-                        isOtpVerified: true,
-                        from: userHub.name,
-                        to: 'OMR IT Corridor',
-                        pickupCoords: { lat: userHub.lat, lng: userHub.lng },
-                        dropoffCoords: { lat: 12.9010, lng: 80.2279 },
-                        mode: isBikeCaptain ? 'Bike Taxi' : 'Book a Driver'
-                      })}
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-cyan-50 text-slate-600 hover:text-cyan-700 border border-slate-200 transition-colors"
-                      title="Track Live GPS Radar"
-                    >
-                      <Radio className="w-4 h-4" />
-                    </button>
-
-                    {/* Chat Action */}
-                    {onOpenChat && (
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {/* Report Driver Button */}
                       <button
-                        onClick={() => onOpenChat(driver, 'driver')}
-                        className="p-2 rounded-xl bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border border-slate-200 transition-colors"
-                        title="Chat with Captain"
+                        onClick={() => setReportingDriver(driver)}
+                        className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 transition-colors"
+                        title="Report Driver (3-Strike Policy)"
                       >
-                        <MessageSquare className="w-4 h-4" />
+                        <ShieldAlert className="w-4 h-4" />
                       </button>
-                    )}
-                  </div>
 
-                  {/* Dispatch Request Button */}
-                  <button
-                    onClick={() => {
-                      if (onRequestDriver) {
-                        onRequestDriver({
-                          mode: isBikeCaptain ? 'Bike Taxi' : 'Book a Driver',
-                          title: `${driver.name} • ${driver.vehicleModel}`,
-                          price: isBikeCaptain ? 140 : 420,
-                          details: `Direct Captain Dispatch • ${driver.licensePlate} • OTP: 4892 • ~${driver.calculatedEtaMins} mins away`,
-                          driverOrHost: driver.name,
+                      {/* Live Telemetry Radar */}
+                      <button
+                        onClick={() => setTrackingDriver({
+                          title: driver.vehicleModel,
                           vehicle: driver.vehicleModel,
+                          driverName: driver.name,
                           driverAvatar: driver.avatar,
                           rideOtp: '4892',
-                          pickupCoords: { lat: userHub.lat, lng: userHub.lng }
-                        });
-                      }
-                    }}
-                    className={`py-2 px-3.5 rounded-xl font-extrabold text-xs text-white shadow-md active:scale-95 transition-all flex items-center gap-1 cursor-pointer ${
-                      isBikeCaptain ? 'bg-cyan-600 hover:bg-cyan-700' : 'bg-blue-600 hover:bg-blue-700'
+                          isOtpVerified: true,
+                          from: userHub.name,
+                          to: 'OMR IT Corridor',
+                          pickupCoords: { lat: userHub.lat, lng: userHub.lng },
+                          dropoffCoords: { lat: 12.9010, lng: 80.2279 },
+                          mode: isBikeCaptain ? 'Bike Taxi' : 'Book a Driver'
+                        })}
+                        className="p-2 rounded-xl bg-slate-100 hover:bg-cyan-50 text-slate-600 hover:text-cyan-700 border border-slate-200 transition-colors"
+                        title="Track Live GPS Radar"
+                      >
+                        <Radio className="w-4 h-4" />
+                      </button>
+
+                      {/* Chat Action */}
+                      {onOpenChat && (
+                        <button
+                          onClick={() => onOpenChat(driver, 'driver')}
+                          className="p-2 rounded-xl bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border border-slate-200 transition-colors"
+                          title="Chat with Captain"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Dispatch & Schedule Action Buttons */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          if (onRequestDriver) {
+                            onRequestDriver({
+                              id: driver.id,
+                              targetId: driver.id,
+                              driverId: driver.id,
+                              mode: isBikeCaptain ? 'Ride with Driver (Two-Wheeler)' : 'Ride with Driver (Car)',
+                              title: `${driver.name} • ${driver.vehicleModel}`,
+                              price: isBikeCaptain ? 140 : 420,
+                              details: `Instant Captain Dispatch • ${driver.licensePlate} • OTP: 4892 • ~${driver.calculatedEtaMins} mins away`,
+                              driverOrHost: driver.name,
+                              vehicle: driver.vehicleModel,
+                              driverAvatar: driver.avatar,
+                              driverVehicleType: isBikeCaptain ? 'two-wheeler' : 'car',
+                              isScheduled: false,
+                              rideOtp: '4892',
+                              pickupCoords: { lat: userHub.lat, lng: userHub.lng }
+                            });
+                          }
+                        }}
+                        className={`py-2 px-3 rounded-xl font-extrabold text-[11px] text-white shadow-xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer ${
+                          isBikeCaptain ? 'bg-cyan-600 hover:bg-cyan-700' : 'bg-blue-600 hover:bg-blue-700'
+                        }`}
+                        title="Book Captain Immediately"
+                      >
+                        <span>⚡ Instant</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (onRequestDriver) {
+                            onRequestDriver({
+                              id: driver.id,
+                              targetId: driver.id,
+                              driverId: driver.id,
+                              mode: isBikeCaptain ? 'Ride with Driver (Two-Wheeler)' : 'Ride with Driver (Car)',
+                              title: `${driver.name} • ${driver.vehicleModel}`,
+                              price: isBikeCaptain ? 140 : 420,
+                              details: `Scheduled Captain Reservation • ${driver.licensePlate} • OTP: 4892`,
+                              driverOrHost: driver.name,
+                              vehicle: driver.vehicleModel,
+                              driverAvatar: driver.avatar,
+                              driverVehicleType: isBikeCaptain ? 'two-wheeler' : 'car',
+                              isScheduled: true,
+                              rideOtp: '4892',
+                              pickupCoords: { lat: userHub.lat, lng: userHub.lng }
+                            });
+                          }
+                        }}
+                        className="py-2 px-2.5 rounded-xl font-bold text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Schedule this Captain for Date & Time"
+                      >
+                        <Calendar className="w-3 h-3 text-indigo-600" />
+                        <span>Schedule</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Pagination Bar for Captains */}
+          {filteredDrivers.length > 0 && (
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+              <div className="text-xs text-slate-600 font-medium">
+                Showing <strong className="text-slate-900">{pageSize === 'all' ? 1 : (currentPage - 1) * pageSize + 1}</strong> – <strong className="text-slate-900">{pageSize === 'all' ? filteredDrivers.length : Math.min(currentPage * pageSize, filteredDrivers.length)}</strong> of <strong className="text-blue-600 font-extrabold">{filteredDrivers.length} Verified Captains</strong>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-bold">Show:</span>
+                {[12, 24, 'all'].map((sz) => (
+                  <button
+                    key={sz}
+                    onClick={() => { setPageSize(sz); setCurrentPage(1); }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-extrabold cursor-pointer transition-all ${
+                      pageSize === sz ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                     }`}
                   >
-                    <span>Request</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    {sz === 'all' ? 'All (40)' : sz}
+                  </button>
+                ))}
+              </div>
+
+              {pageSize !== 'all' && totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    Prev
+                  </button>
+
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, idx) => {
+                    const pageNum = idx + 1;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded-lg text-xs font-extrabold cursor-pointer transition-all ${
+                          currentPage === pageNum ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  {totalPages > 5 && <span className="px-1 text-slate-400 text-xs font-bold">...</span>}
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    Next
                   </button>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {/* Driver Incident Report Modal */}

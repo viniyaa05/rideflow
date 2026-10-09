@@ -1,4 +1,5 @@
 import express from 'express';
+import { pricingService } from '../services/pricingService.js';
 
 const router = express.Router();
 
@@ -49,7 +50,21 @@ const GEO_COORDINATES = {
   'puducherry': { lat: 11.9416, lng: 79.8083, name: 'Puducherry White Town Promenade (605001)' },
   'hosur': { lat: 12.7409, lng: 77.8253, name: 'Hosur SIPCOT Electronic City (635109)' },
   'bangalore': { lat: 12.9716, lng: 77.5946, name: 'Bengaluru Kempegowda (560001)' },
-  'bengaluru': { lat: 12.9716, lng: 77.5946, name: 'Bengaluru Kempegowda (560001)' }
+  'bengaluru': { lat: 12.9716, lng: 77.5946, name: 'Bengaluru Kempegowda (560001)' },
+  'delhi': { lat: 28.6139, lng: 77.2090, name: 'New Delhi Central (110001)' },
+  'new delhi': { lat: 28.6139, lng: 77.2090, name: 'New Delhi Central (110001)' },
+  'gurugram': { lat: 28.4595, lng: 77.0266, name: 'Gurugram Cyber City (122002)' },
+  'noida': { lat: 28.5355, lng: 77.3910, name: 'Noida Electronic City (201301)' },
+  'mumbai': { lat: 19.0760, lng: 72.8777, name: 'Mumbai BKC & Marine Drive (400001)' },
+  'pune': { lat: 18.5204, lng: 73.8567, name: 'Pune Hinjawadi IT Hub (411057)' },
+  'hyderabad': { lat: 17.3850, lng: 78.4867, name: 'Hyderabad HITEC City (500081)' },
+  'kolkata': { lat: 22.5726, lng: 88.3639, name: 'Kolkata Howrah & Salt Lake (700001)' },
+  'kochi': { lat: 9.9312, lng: 76.2673, name: 'Cochin MG Road & Infopark (682001)' },
+  'ahmedabad': { lat: 23.0225, lng: 72.5714, name: 'Ahmedabad SG Highway (380001)' },
+  'jaipur': { lat: 26.9124, lng: 75.7873, name: 'Jaipur Pink City (302001)' },
+  'lucknow': { lat: 26.8467, lng: 80.9462, name: 'Lucknow Charbagh (226001)' },
+  'chandigarh': { lat: 30.7333, lng: 76.7794, name: 'Chandigarh Sector 17 (160017)' },
+  'goa': { lat: 15.2993, lng: 74.1240, name: 'Goa Panaji & Mopa Hub (403001)' }
 };
 
 const CACHE = new Map();
@@ -198,6 +213,16 @@ router.get('/distance', async (req, res) => {
     console.error('[Route Distance API Error]', err);
     return res.status(500).json({ success: false, error: err.message });
   }
+});
+
+/**
+ * GET/POST /fares - Calculate dynamic route fares with surge pricing
+ */
+router.all('/fares', (req, res) => {
+  const distanceKm = Number(req.query.distanceKm || req.body?.distanceKm || 12.5);
+  const surgeMultiplier = req.query.surgeMultiplier ? Number(req.query.surgeMultiplier) : undefined;
+  const result = pricingService.calculateFares(distanceKm, { surgeMultiplier });
+  return res.json({ success: true, ...result });
 });
 
 export default router;

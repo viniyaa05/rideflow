@@ -28,10 +28,14 @@ import {
   Clock,
   Compass,
   Check,
-  Bike
+  Bike,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import SuperAdminResponsePanel from './SuperAdminResponsePanel';
 
 export default function AdminView() {
   const { 
@@ -44,6 +48,7 @@ export default function AdminView() {
     userReports,
     userAppeals,
     supportQueries,
+    refreshSupportQueries,
     flagUser,
     unflagUser,
     resolveAppeal,
@@ -68,6 +73,34 @@ export default function AdminView() {
 
   // Appeal resolution state
   const [appealNotes, setAppealNotes] = useState({});
+
+  // Driver Roster Controls
+  const [driverSearch, setDriverSearch] = useState('');
+  const [driverSort, setDriverSort] = useState('rating-desc'); // 'rating-desc' | 'trips-desc' | 'name-asc' | 'flagged-first'
+  const [driverStatusFilter, setDriverStatusFilter] = useState('all'); // 'all' | 'active' | 'flagged'
+  const [driverPage, setDriverPage] = useState(1);
+  const driverPageSize = 6;
+
+  // 3-Strike Incident Controls
+  const [strikeSearch, setStrikeSearch] = useState('');
+  const [strikeFilter, setStrikeFilter] = useState('all'); // 'all' | 'critical'
+  const [strikeSort, setStrikeSort] = useState('newest'); // 'newest' | 'strikes-desc'
+  const [strikePage, setStrikePage] = useState(1);
+  const strikePageSize = 5;
+
+  // Appeals Controls
+  const [appealSearch, setAppealSearch] = useState('');
+  const [appealStatusFilter, setAppealStatusFilter] = useState('all'); // 'all' | 'pending' | 'approved' | 'rejected'
+  const [appealSort, setAppealSort] = useState('newest'); // 'newest' | 'oldest'
+  const [appealPage, setAppealPage] = useState(1);
+  const appealPageSize = 5;
+
+  // Review Moderation Controls
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [reviewSort, setReviewSort] = useState('lowest'); // 'lowest' | 'highest' | 'newest'
+  const [reviewRatingFilter, setReviewRatingFilter] = useState('all'); // 'all' | 'critical' | '5' | '1'
+  const [reviewPage, setReviewPage] = useState(1);
+  const reviewPageSize = 6;
 
   // Simulated live fleet coordinates for radar map
   const [fleetVehicles, setFleetVehicles] = useState([
@@ -124,14 +157,23 @@ export default function AdminView() {
     showNotification('✕ Appeal rejected. Account remains flagged.');
   };
 
-  const handleSendSupportReply = (queryId) => {
+  useEffect(() => {
+    if (activeAdminTab === 'support' && refreshSupportQueries) {
+      refreshSupportQueries();
+    }
+  }, [activeAdminTab]);
+
+  const handleSendSupportReply = async (queryId) => {
     const text = (supportReplies[queryId] || replyText || '').trim();
     if (!text) return;
-    resolveSupportQuery(queryId, text);
+    await resolveSupportQuery(queryId, text);
     setSupportReplies((prev) => ({ ...prev, [queryId]: '' }));
     setReplyText('');
     setActiveReplyId(null);
-    showNotification('✓ Support response transmitted to user ticket inbox.');
+    showNotification('✓ Official response transmitted to user ticket inbox & saved to database.');
+    if (refreshSupportQueries) {
+      refreshSupportQueries();
+    }
   };
 
   // 3-Strike aggregation: map strikes per user
@@ -140,6 +182,100 @@ export default function AdminView() {
     const key = r.targetUserId || r.targetUserName;
     strikeMap[key] = (strikeMap[key] || 0) + 1;
   });
+
+  // Filtered & Paginated Drivers
+  const filteredDrivers = drivers
+    .filter((d) => {
+      if (driverStatusFilter === 'active' && d.isFlagged) return false;
+      if (driverStatusFilter === 'flagged' && !d.isFlagged) return false;
+      if (driverSearch.trim()) {
+        const q = driverSearch.toLowerCase();
+        const matchName = (d.name || '').toLowerCase().includes(q);
+        const matchPlate = (d.licensePlate || '').toLowerCase().includes(q);
+        const matchModel = (d.vehicleModel || '').toLowerCase().includes(q);
+        const matchCity = (d.city || '').toLowerCase().includes(q);
+        if (!matchName && !matchPlate && !matchModel && !matchCity) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (driverSort === 'rating-desc') return (b.rating || 0) - (a.rating || 0);
+      if (driverSort === 'trips-desc') return (b.trips || 0) - (a.trips || 0);
+      if (driverSort === 'name-asc') return (a.name || '').localeCompare(b.name || '');
+      if (driverSort === 'flagged-first') return (b.isFlagged ? 1 : 0) - (a.isFlagged ? 1 : 0);
+      return 0;
+    });
+  const totalDriverPages = Math.ceil(filteredDrivers.length / driverPageSize) || 1;
+  const displayedDrivers = filteredDrivers.slice((driverPage - 1) * driverPageSize, driverPage * driverPageSize);
+
+  // Filtered & Paginated 3-Strike Incident Reports
+  const filteredReports = userReports
+    .filter((r) => {
+      const strikeCount = strikeMap[r.targetUserId || r.targetUserName] || 1;
+      if (strikeFilter === 'critical' && strikeCount < 3) return false;
+      if (strikeSearch.trim()) {
+        const q = strikeSearch.toLowerCase();
+        const matchTarget = (r.targetUserName || r.targetName || '').toLowerCase().includes(q);
+        const matchReason = (r.reason || '').toLowerCase().includes(q);
+        const matchDesc = (r.description || '').toLowerCase().includes(q);
+        const matchReporter = (r.reporterName || '').toLowerCase().includes(q);
+        if (!matchTarget && !matchReason && !matchDesc && !matchReporter) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (strikeSort === 'strikes-desc') {
+        const aCount = strikeMap[a.targetUserId || a.targetUserName] || 1;
+        const bCount = strikeMap[b.targetUserId || b.targetUserName] || 1;
+        return bCount - aCount;
+      }
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+  const totalStrikePages = Math.ceil(filteredReports.length / strikePageSize) || 1;
+  const displayedReports = filteredReports.slice((strikePage - 1) * strikePageSize, strikePage * strikePageSize);
+
+  // Filtered & Paginated Appeals
+  const filteredAppeals = userAppeals
+    .filter((a) => {
+      if (appealStatusFilter !== 'all' && a.status !== appealStatusFilter) return false;
+      if (appealSearch.trim()) {
+        const q = appealSearch.toLowerCase();
+        const matchName = (a.userName || '').toLowerCase().includes(q);
+        const matchEmail = (a.userEmail || '').toLowerCase().includes(q);
+        const matchExp = (a.explanation || '').toLowerCase().includes(q);
+        if (!matchName && !matchEmail && !matchExp) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (appealSort === 'oldest') return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+  const totalAppealPages = Math.ceil(filteredAppeals.length / appealPageSize) || 1;
+  const displayedAppeals = filteredAppeals.slice((appealPage - 1) * appealPageSize, appealPage * appealPageSize);
+
+  // Filtered & Paginated Public Reviews
+  const filteredReviews = reviews
+    .filter((r) => {
+      if (reviewRatingFilter === 'critical' && r.rating > 2) return false;
+      if (reviewRatingFilter === '5' && r.rating !== 5) return false;
+      if (reviewRatingFilter === '1' && r.rating !== 1) return false;
+      if (reviewSearch.trim()) {
+        const q = reviewSearch.toLowerCase();
+        const matchUser = (r.userName || '').toLowerCase().includes(q);
+        const matchTarget = (r.targetName || '').toLowerCase().includes(q);
+        const matchComment = (r.comment || '').toLowerCase().includes(q);
+        if (!matchUser && !matchTarget && !matchComment) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (reviewSort === 'lowest') return (a.rating || 0) - (b.rating || 0);
+      if (reviewSort === 'highest') return (b.rating || 0) - (a.rating || 0);
+      return new Date(b.date || 0) - new Date(a.date || 0);
+    });
+  const totalReviewPages = Math.ceil(filteredReviews.length / reviewPageSize) || 1;
+  const displayedReviews = filteredReviews.slice((reviewPage - 1) * reviewPageSize, reviewPage * reviewPageSize);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
@@ -156,7 +292,7 @@ export default function AdminView() {
               Transit Safety, Fleet Radar & Moderation Console
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 font-medium">
-              Real-time regional oversight across Tamil Nadu. Live telemetry tracking, 3-strike user enforcement, appeals clearing, and passenger support desk.
+              Real-time regional oversight across Tamil Nadu. Live telemetry tracking, 3-strike user enforcement, appeals clearing, and passenger grievance resolution.
             </p>
           </div>
 
@@ -174,10 +310,10 @@ export default function AdminView() {
         {/* Action Tabs Bar */}
         <div className="pt-4 border-t border-slate-200/80 flex items-center gap-2 overflow-x-auto pb-1">
           {[
+            { id: 'support', label: `💬 Client Grievance Queue (${supportQueries.filter(q => q.status !== 'resolved').length} Open)`, icon: MessageSquare },
             { id: 'telemetry', label: 'Central Fleet Radar', icon: Radio },
             { id: 'strikes', label: `3-Strike Reports (${userReports.length})`, icon: BadgeAlert },
             { id: 'appeals', label: `Appeals Inbox (${userAppeals.filter(a => a.status === 'pending').length} New)`, icon: UserX },
-            { id: 'support', label: `Support Desk (${supportQueries.filter(q => q.status !== 'resolved').length} Open)`, icon: HelpCircle },
             { id: 'drivers', label: `Driver Roster (${drivers.length})`, icon: Car },
             { id: 'reviews', label: `Reviews (${reviews.length})`, icon: FileText },
             { id: 'revenue', label: 'GST Ledger', icon: TrendingUp },
@@ -340,17 +476,61 @@ export default function AdminView() {
               </div>
 
               <span className="px-3 py-1 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs font-bold">
-                {userReports.length} Incident Logs
+                {filteredReports.length} of {userReports.length} Incidents
               </span>
             </div>
 
+            {/* Search, Filter & Sort Toolbar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search target user, reason, or reporter..."
+                  value={strikeSearch}
+                  onChange={(e) => { setStrikeSearch(e.target.value); setStrikePage(1); }}
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400 font-medium"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  {[
+                    { id: 'all', label: 'All Incidents' },
+                    { id: 'critical', label: '⚠️ 3+ Strikes (Critical)' }
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => { setStrikeFilter(f.id); setStrikePage(1); }}
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                        strikeFilter === f.id
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                <select
+                  value={strikeSort}
+                  onChange={(e) => setStrikeSort(e.target.value)}
+                  className="bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-rose-400 cursor-pointer"
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="strikes-desc">Most Strikes First</option>
+                </select>
+              </div>
+            </div>
+
             <div className="space-y-3">
-              {userReports.length === 0 ? (
+              {displayedReports.length === 0 ? (
                 <div className="p-8 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl">
-                  No incident reports logged yet.
+                  No incident reports matching your search or filters.
                 </div>
               ) : (
-                userReports.map((report) => {
+                displayedReports.map((report) => {
                   const strikeCount = strikeMap[report.targetUserId || report.targetUserName] || 1;
                   const isEligibleForSuspension = strikeCount >= 3;
 
@@ -398,7 +578,7 @@ export default function AdminView() {
                             unflagUser(report.targetUserId);
                             showNotification(`✓ Cleared flags for user ${report.targetUserName}.`);
                           }}
-                          className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+                          className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
                         >
                           Pardon
                         </button>
@@ -408,6 +588,35 @@ export default function AdminView() {
                 })
               )}
             </div>
+
+            {/* Pagination Controls */}
+            {filteredReports.length > 0 && (
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+                <span className="text-slate-600 font-medium">
+                  Showing <strong className="text-slate-900">{(strikePage - 1) * strikePageSize + 1}</strong> – <strong className="text-slate-900">{Math.min(strikePage * strikePageSize, filteredReports.length)}</strong> of <strong className="text-rose-700 font-bold">{filteredReports.length} Reports</strong>
+                </span>
+
+                {totalStrikePages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setStrikePage((p) => Math.max(1, p - 1))}
+                      disabled={strikePage === 1}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                    >
+                      Prev
+                    </button>
+                    <span className="px-2 font-bold text-slate-700">Page {strikePage} of {totalStrikePages}</span>
+                    <button
+                      onClick={() => setStrikePage((p) => Math.min(totalStrikePages, p + 1))}
+                      disabled={strikePage === totalStrikePages}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -428,17 +637,63 @@ export default function AdminView() {
               </div>
 
               <span className="px-3 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-                {userAppeals.length} Total Appeals
+                {filteredAppeals.length} of {userAppeals.length} Appeals
               </span>
             </div>
 
+            {/* Search, Filter & Sort Toolbar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Search appealing user, email, or explanation..."
+                  value={appealSearch}
+                  onChange={(e) => { setAppealSearch(e.target.value); setAppealPage(1); }}
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 font-medium"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  {[
+                    { id: 'all', label: 'All Appeals' },
+                    { id: 'pending', label: '⏳ Pending' },
+                    { id: 'approved', label: '✓ Approved' },
+                    { id: 'rejected', label: '✕ Rejected' }
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      onClick={() => { setAppealStatusFilter(st.id); setAppealPage(1); }}
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                        appealStatusFilter === st.id
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+
+                <select
+                  value={appealSort}
+                  onChange={(e) => setAppealSort(e.target.value)}
+                  className="bg-white border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 cursor-pointer"
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+            </div>
+
             <div className="space-y-3">
-              {userAppeals.length === 0 ? (
+              {displayedAppeals.length === 0 ? (
                 <div className="p-8 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl">
-                  No user appeals pending review.
+                  No user appeals matching your search or filters.
                 </div>
               ) : (
-                userAppeals.map((appeal) => (
+                displayedAppeals.map((appeal) => (
                   <div
                     key={appeal.id}
                     className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3"
@@ -484,13 +739,13 @@ export default function AdminView() {
                         <div className="flex items-center gap-2 w-full sm:w-auto">
                           <button
                             onClick={() => handleRejectAppeal(appeal.id)}
-                            className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-bold transition-colors"
+                            className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 text-xs font-bold transition-colors cursor-pointer"
                           >
                             Reject Appeal
                           </button>
                           <button
                             onClick={() => handleApproveAppeal(appeal.id)}
-                            className="flex-1 sm:flex-none px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm transition-colors"
+                            className="flex-1 sm:flex-none px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm transition-colors cursor-pointer"
                           >
                             Approve & Lift Flag
                           </button>
@@ -501,196 +756,304 @@ export default function AdminView() {
                 ))
               )}
             </div>
+
+            {/* Pagination Controls */}
+            {filteredAppeals.length > 0 && (
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+                <span className="text-slate-600 font-medium">
+                  Showing <strong className="text-slate-900">{(appealPage - 1) * appealPageSize + 1}</strong> – <strong className="text-slate-900">{Math.min(appealPage * appealPageSize, filteredAppeals.length)}</strong> of <strong className="text-amber-700 font-bold">{filteredAppeals.length} Appeals</strong>
+                </span>
+
+                {totalAppealPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setAppealPage((p) => Math.max(1, p - 1))}
+                      disabled={appealPage === 1}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                    >
+                      Prev
+                    </button>
+                    <span className="px-2 font-bold text-slate-700">Page {appealPage} of {totalAppealPages}</span>
+                    <button
+                      onClick={() => setAppealPage((p) => Math.min(totalAppealPages, p + 1))}
+                      disabled={appealPage === totalAppealPages}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 4: SUPPORT DESK & USER QUERIES */}
+      {/* TAB: SUPER ADMIN RESPONSE TERMINAL & USER Q&A */}
       {activeAdminTab === 'support' && (
-        <div className="space-y-6 animate-fade-in">
-          <div className="glass-panel p-6 rounded-3xl border border-indigo-200 bg-white space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                  <HelpCircle className="w-5 h-5 text-indigo-600" />
-                  User Inquiries & Support Desk
-                </h3>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  Direct messages from commuters and partner drivers. Provide assistance and resolve tickets.
-                </p>
-              </div>
-
-              <span className="px-3 py-1 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 text-xs font-bold">
-                {supportQueries.length} Inquiries Logged
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {supportQueries.length === 0 ? (
-                <div className="p-8 text-center text-xs font-bold text-slate-500 bg-slate-50 rounded-2xl">
-                  No support tickets open.
-                </div>
-              ) : (
-                supportQueries.map((query) => (
-                  <div
-                    key={query.id}
-                    className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900">{query.subject}</h4>
-                        <span className="text-[10px] text-slate-500">
-                          From: {query.userName} ({query.userEmail}) • {new Date(query.createdAt).toLocaleDateString()}
-                        </span>
-                      </div>
-
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                        query.status === 'resolved'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-indigo-100 text-indigo-800'
-                      }`}>
-                        {query.status === 'resolved' ? '✓ Resolved' : '⏳ Open Ticket'}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      "{query.message}"
-                    </p>
-
-                    {query.adminReply && (
-                      <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100 text-xs text-indigo-900">
-                        <strong className="block text-[10px] font-bold text-indigo-700 mb-0.5">Transmitted Admin Response:</strong>
-                        {query.adminReply}
-                      </div>
-                    )}
-
-                    {query.status !== 'resolved' && (
-                      <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="text"
-                          placeholder="Type official response to user ticket..."
-                          value={supportReplies[query.id] !== undefined ? supportReplies[query.id] : (activeReplyId === query.id ? replyText : '')}
-                          onChange={(e) => {
-                            setActiveReplyId(query.id);
-                            setReplyText(e.target.value);
-                            setSupportReplies({ ...supportReplies, [query.id]: e.target.value });
-                          }}
-                          style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-                          className="flex-1 px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-2xs"
-                        />
-                        <button
-                          onClick={() => handleSendSupportReply(query.id)}
-                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-colors cursor-pointer whitespace-nowrap"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>Reply & Resolve</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+        <SuperAdminResponsePanel />
       )}
 
       {/* TAB 5: DRIVER ROSTER & RESTRICTIONS */}
       {activeAdminTab === 'drivers' && (
         <div className="space-y-6 animate-fade-in">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {drivers.map((driver) => (
-              <div
-                key={driver.id}
-                className={`p-5 rounded-3xl border transition-all flex flex-col justify-between space-y-4 ${
-                  driver.isFlagged
-                    ? 'bg-rose-50/60 border-rose-300 ring-2 ring-rose-200'
-                    : 'bg-white border-slate-200 shadow-sm'
-                }`}
+          {/* Search, Filter & Sort Toolbar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 bg-white rounded-3xl border border-slate-200 shadow-xs">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="Search driver by name, vehicle, license plate, or city..."
+                value={driverSearch}
+                onChange={(e) => { setDriverSearch(e.target.value); setDriverPage(1); }}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                {[
+                  { id: 'all', label: 'All Drivers' },
+                  { id: 'active', label: '✓ Active & Vetted' },
+                  { id: 'flagged', label: '⚠️ Restricted' }
+                ].map((st) => (
+                  <button
+                    key={st.id}
+                    onClick={() => { setDriverStatusFilter(st.id); setDriverPage(1); }}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                      driverStatusFilter === st.id
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+
+              <select
+                value={driverSort}
+                onChange={(e) => setDriverSort(e.target.value)}
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={driver.avatar}
-                        alt={driver.name}
-                        className="w-10 h-10 rounded-full object-cover ring-2 ring-slate-200"
-                      />
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900">{driver.name}</h4>
-                        <span className="font-mono text-[10px] text-slate-500 font-bold block">{driver.licensePlate}</span>
+                <option value="rating-desc">Rating: High to Low</option>
+                <option value="trips-desc">Most Trips Completed</option>
+                <option value="name-asc">Name (A-Z)</option>
+                <option value="flagged-first">Restricted First</option>
+              </select>
+            </div>
+          </div>
+
+          {displayedDrivers.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 text-xs font-bold text-slate-400">
+              No drivers found matching your search or filters.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {displayedDrivers.map((driver) => (
+                <div
+                  key={driver.id}
+                  className={`p-5 rounded-3xl border transition-all flex flex-col justify-between space-y-4 ${
+                    driver.isFlagged
+                      ? 'bg-rose-50/60 border-rose-300 ring-2 ring-rose-200'
+                      : 'bg-white border-slate-200 shadow-sm'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={driver.avatar}
+                          alt={driver.name}
+                          className="w-10 h-10 rounded-full object-cover ring-2 ring-slate-200"
+                        />
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900">{driver.name}</h4>
+                          <span className="font-mono text-[10px] text-slate-500 font-bold block">{driver.licensePlate}</span>
+                        </div>
                       </div>
+
+                      {driver.isFlagged ? (
+                        <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase">
+                          Restricted
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase">
+                          Active & Vetted
+                        </span>
+                      )}
                     </div>
 
-                    {driver.isFlagged ? (
-                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase">
-                        Restricted
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase">
-                        Active & Vetted
-                      </span>
-                    )}
+                    <p className="text-[11px] text-slate-600 font-medium">
+                      {driver.vehicleModel} • {driver.trips} completed trips • {driver.rating}⭐
+                    </p>
                   </div>
 
-                  <p className="text-[11px] text-slate-600 font-medium">
-                    {driver.vehicleModel} • {driver.trips} completed trips • {driver.rating}⭐
-                  </p>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-500 font-semibold">{driver.city || 'Tamil Nadu'}</span>
+                    {!driver.isFlagged ? (
+                      <button
+                        onClick={() => setSelectedDriverToFlag(driver)}
+                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                        <span>Flag / Restrict</span>
+                      </button>
+                    ) : (
+                      <span className="text-[10px] text-rose-700 font-bold">Investigation Active</span>
+                    )}
+                  </div>
                 </div>
+              ))}
+            </div>
+          )}
 
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-500 font-semibold">{driver.city || 'Tamil Nadu'}</span>
-                  {!driver.isFlagged ? (
-                    <button
-                      onClick={() => setSelectedDriverToFlag(driver)}
-                      className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-800 text-[11px] font-bold flex items-center gap-1 transition-colors"
-                    >
-                      <UserX className="w-3.5 h-3.5" />
-                      <span>Flag / Restrict</span>
-                    </button>
-                  ) : (
-                    <span className="text-[10px] text-rose-700 font-bold">Investigation Active</span>
-                  )}
+          {/* Pagination Controls */}
+          {filteredDrivers.length > 0 && (
+            <div className="p-3.5 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs shadow-2xs">
+              <span className="text-slate-600 font-medium">
+                Showing <strong className="text-slate-900">{(driverPage - 1) * driverPageSize + 1}</strong> – <strong className="text-slate-900">{Math.min(driverPage * driverPageSize, filteredDrivers.length)}</strong> of <strong className="text-indigo-700 font-bold">{filteredDrivers.length} Drivers</strong>
+              </span>
+
+              {totalDriverPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setDriverPage((p) => Math.max(1, p - 1))}
+                    disabled={driverPage === 1}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 font-bold text-slate-700">Page {driverPage} of {totalDriverPages}</span>
+                  <button
+                    onClick={() => setDriverPage((p) => Math.min(totalDriverPages, p + 1))}
+                    disabled={driverPage === totalDriverPages}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                  >
+                    Next
+                  </button>
                 </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* TAB 6: REVIEW MODERATION */}
       {activeAdminTab === 'reviews' && (
         <div className="space-y-4 animate-fade-in">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {reviews.map((rev) => (
-              <div
-                key={rev.id}
-                className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between space-y-3"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="text-xs font-bold text-slate-900">{rev.userName}</span>
-                      <span className="text-[10px] text-slate-400 block font-medium">Review for {rev.targetName}</span>
-                    </div>
-                    <span className="text-xs font-bold text-amber-500">⭐ {rev.rating}/5</span>
-                  </div>
-                  <p className="text-xs text-slate-600 mt-2 font-medium">"{rev.comment}"</p>
-                </div>
+          {/* Search, Filter & Sort Toolbar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 bg-white rounded-3xl border border-slate-200 shadow-xs">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="Search reviews by passenger name, driver, or feedback text..."
+                value={reviewSearch}
+                onChange={(e) => { setReviewSearch(e.target.value); setReviewPage(1); }}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 font-medium"
+              />
+            </div>
 
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400">{rev.date}</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1">
+                {[
+                  { id: 'all', label: 'All Reviews' },
+                  { id: 'critical', label: '⚠️ ≤ 2 Stars' },
+                  { id: '5', label: '5 ⭐' },
+                  { id: '1', label: '1 ⭐' }
+                ].map((st) => (
                   <button
-                    onClick={() => handleModerateReview(rev.id)}
-                    className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 text-[11px] font-bold flex items-center gap-1 transition-colors"
+                    key={st.id}
+                    onClick={() => { setReviewRatingFilter(st.id); setReviewPage(1); }}
+                    className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                      reviewRatingFilter === st.id
+                        ? 'bg-amber-500 text-white shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove Review</span>
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+
+              <select
+                value={reviewSort}
+                onChange={(e) => setReviewSort(e.target.value)}
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 cursor-pointer"
+              >
+                <option value="lowest">Lowest Rating First</option>
+                <option value="highest">Highest Rating First</option>
+                <option value="newest">Newest First</option>
+              </select>
+            </div>
+          </div>
+
+          {displayedReviews.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 text-xs font-bold text-slate-400">
+              No reviews found matching your search.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {displayedReviews.map((rev) => (
+                <div
+                  key={rev.id}
+                  className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm flex flex-col justify-between space-y-3"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-900">{rev.userName}</span>
+                        <span className="text-[10px] text-slate-400 block font-medium">Review for {rev.targetName}</span>
+                      </div>
+                      <span className="text-xs font-bold text-amber-500">⭐ {rev.rating}/5</span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-2 font-medium">"{rev.comment}"</p>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">{rev.date}</span>
+                    <button
+                      onClick={() => handleModerateReview(rev.id)}
+                      className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove Review</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          {filteredReviews.length > 0 && (
+            <div className="p-3.5 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs shadow-2xs">
+              <span className="text-slate-600 font-medium">
+                Showing <strong className="text-slate-900">{(reviewPage - 1) * reviewPageSize + 1}</strong> – <strong className="text-slate-900">{Math.min(reviewPage * reviewPageSize, filteredReviews.length)}</strong> of <strong className="text-amber-600 font-bold">{filteredReviews.length} Reviews</strong>
+              </span>
+
+              {totalReviewPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setReviewPage((p) => Math.max(1, p - 1))}
+                    disabled={reviewPage === 1}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 font-bold text-slate-700">Page {reviewPage} of {totalReviewPages}</span>
+                  <button
+                    onClick={() => setReviewPage((p) => Math.min(totalReviewPages, p + 1))}
+                    disabled={reviewPage === totalReviewPages}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-bold text-slate-700 cursor-pointer"
+                  >
+                    Next
                   </button>
                 </div>
-              </div>
-            ))}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

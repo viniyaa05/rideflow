@@ -68,9 +68,39 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
     }
   };
 
-  // Filtering & Sorting logic
+  // 1. Normalized Rentals Memoization (Prevents schema mismatches between MongoDB & Frontend)
+  const normalizedRentals = useMemo(() => {
+    return (rentals || []).map((item) => {
+      const displayName = item.name || item.title || item.model || 'Standard Vehicle';
+      const hourly = Number(item.hourlyPrice ?? item.pricePerHour ?? 180);
+      const daily = Number(item.dailyPrice ?? (hourly * 8));
+      const typeStr = item.type || (item.category?.includes('bike') ? 'Bike' : 'Sedan');
+
+      return {
+        ...item,
+        name: displayName,
+        title: displayName,
+        hourlyPrice: hourly,
+        dailyPrice: daily,
+        type: typeStr,
+        rangeKm: Number(item.rangeKm || 450),
+        seats: Number(item.seats || (typeStr === 'Bike' ? 2 : 4)),
+        transmission: item.transmission || 'Manual',
+        location: item.location || 'Chennai Central Hub',
+        liveRating: getLiveRating({
+          reviews,
+          targetType: 'rental',
+          targetName: displayName,
+          fallbackRating: item.rating || 4.8,
+          fallbackCount: item.reviews || 12
+        })
+      };
+    });
+  }, [rentals, reviews]);
+
+  // 2. Filtering & Sorting logic
   const filteredRentals = useMemo(() => {
-    return rentals
+    return normalizedRentals
       .map((car) => {
         const carLat = car.gpsLocation?.lat || 13.0827;
         const carLng = car.gpsLocation?.lng || 80.2707;
@@ -80,29 +110,32 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
         return {
           ...car,
           distanceKm: distance !== null ? distance : 1.2,
-          estimatedTime: estTime,
-          liveRating: getLiveRating({
-            reviews,
-            targetType: 'rental',
-            targetName: car.name,
-            fallbackRating: car.rating,
-            fallbackCount: car.reviews
-          })
+          estimatedTime: estTime
         };
       })
       .filter((car) => {
+        const carNameLower = (car.name || '').toLowerCase();
+
         if (selectedType === 'Bikes & Scooters') {
-          if (car.type !== 'Bike' && car.category !== 'bike' && !car.name.toLowerCase().includes('enfield') && !car.name.toLowerCase().includes('jupiter') && !car.name.toLowerCase().includes('ola') && !car.name.toLowerCase().includes('aerox')) {
+          const isBike = car.type === 'Bike' || 
+            car.category === 'bike' || 
+            car.category === 'bike-rent' ||
+            carNameLower.includes('enfield') || 
+            carNameLower.includes('jupiter') || 
+            carNameLower.includes('ola') || 
+            carNameLower.includes('aerox') ||
+            carNameLower.includes('scooter');
+          if (!isBike) return false;
+        } else if (selectedType !== 'All') {
+          if (car.type !== selectedType && !car.category?.includes(selectedType.toLowerCase())) {
             return false;
           }
-        } else if (selectedType !== 'All' && car.type !== selectedType) {
-          return false;
         }
 
         if (car.hourlyPrice > maxHourlyPrice) {
           return false;
         }
-        if (minRating > 0 && car.liveRating.rating < minRating) {
+        if (minRating > 0 && car.liveRating?.rating < minRating) {
           return false;
         }
 
@@ -114,9 +147,9 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
 
         if (searchQuery.trim()) {
           const query = searchQuery.toLowerCase();
-          const matchesName = car.name.toLowerCase().includes(query);
-          const matchesBrand = car.brand?.toLowerCase().includes(query);
-          const matchesLocation = car.location?.toLowerCase().includes(query);
+          const matchesName = carNameLower.includes(query);
+          const matchesBrand = (car.brand || '').toLowerCase().includes(query);
+          const matchesLocation = (car.location || '').toLowerCase().includes(query);
           if (!matchesName && !matchesBrand && !matchesLocation) {
             return false;
           }
@@ -126,11 +159,21 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
         if (sortBy === 'nearest') return a.distanceKm - b.distanceKm;
         if (sortBy === 'price-asc') return a.hourlyPrice - b.hourlyPrice;
         if (sortBy === 'price-desc') return b.hourlyPrice - a.hourlyPrice;
-        if (sortBy === 'rating-desc') return b.liveRating.rating - a.liveRating.rating;
+        if (sortBy === 'rating-desc') return (b.liveRating?.rating || 0) - (a.liveRating?.rating || 0);
         if (sortBy === 'range-desc') return b.rangeKm - a.rangeKm;
         return 0;
       });
-  }, [rentals, reviews, selectedType, maxHourlyPrice, minRating, searchQuery, sortBy, userHub, maxDistanceFilter]);
+  }, [normalizedRentals, selectedType, maxHourlyPrice, minRating, maxDistanceFilter, searchQuery, sortBy, userHub]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
+
+  const totalPages = Math.ceil(filteredRentals.length / (pageSize === 'all' ? (filteredRentals.length || 1) : pageSize));
+  const displayedRentals = useMemo(() => {
+    if (pageSize === 'all') return filteredRentals;
+    const start = (currentPage - 1) * pageSize;
+    return filteredRentals.slice(start, start + pageSize);
+  }, [filteredRentals, currentPage, pageSize]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 animate-fade-in">
@@ -347,9 +390,11 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredRentals.map((car) => {
-            const isBikeItem = car.type === 'Bike' || car.category === 'bike' || car.name.toLowerCase().includes('enfield') || car.name.toLowerCase().includes('jupiter') || car.name.toLowerCase().includes('ola') || car.name.toLowerCase().includes('aerox');
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {displayedRentals.map((car) => {
+            const nameLower = (car.name || car.title || '').toLowerCase();
+            const isBikeItem = car.type === 'Bike' || car.category === 'bike' || car.category === 'bike-rent' || nameLower.includes('enfield') || nameLower.includes('jupiter') || nameLower.includes('ola') || nameLower.includes('aerox');
 
             return (
               <div
@@ -497,32 +542,133 @@ export default function RentalsView({ onBookRental, onOpenChat }) {
                         <Radio className="w-4 h-4" />
                       </button>
 
-                      {/* Reserve Button */}
-                      <button
-                        onClick={() => {
-                          if (onBookRental) {
-                            onBookRental({
-                              mode: 'Self-Drive Rental',
-                              title: car.name,
-                              price: car.hourlyPrice * 4,
-                              details: `Self-Drive Rental • 4 hours • ${car.location}`,
-                              driverOrHost: car.hostName || 'RideFlow Fleet Host',
-                              vehicle: car.name,
-                              rideOtp: '4892'
-                            });
-                          }
-                        }}
-                        className="py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>Reserve</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Reserve & Schedule Action Buttons */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            if (onBookRental) {
+                              onBookRental({
+                                id: car.id,
+                                targetId: car.id,
+                                vehicleId: car.id,
+                                mode: 'Self-Drive Rental',
+                                title: car.name,
+                                price: car.hourlyPrice * 4,
+                                hourlyPrice: car.hourlyPrice,
+                                details: `Self-Drive Rental • Instant Unlock • ${car.location}`,
+                                driverOrHost: car.hostName || 'RideFlow Fleet Host',
+                                vehicle: car.name,
+                                vehicleType: car.type,
+                                category: car.type,
+                                seats: car.seats || (car.type === 'Bike' ? 1 : 4),
+                                isScheduled: false,
+                                rideOtp: '4892'
+                              });
+                            }
+                          }}
+                          className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow-xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          title="Instant Self-Drive Pickup"
+                        >
+                          <span>⚡ Now</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            if (onBookRental) {
+                              onBookRental({
+                                id: car.id,
+                                targetId: car.id,
+                                vehicleId: car.id,
+                                mode: 'Self-Drive Rental',
+                                title: car.name,
+                                price: car.hourlyPrice * 4,
+                                hourlyPrice: car.hourlyPrice,
+                                details: `Scheduled Self-Drive Rental • ${car.location}`,
+                                driverOrHost: car.hostName || 'RideFlow Fleet Host',
+                                vehicle: car.name,
+                                vehicleType: car.type,
+                                category: car.type,
+                                seats: car.seats || (car.type === 'Bike' ? 1 : 4),
+                                isScheduled: true,
+                                scheduledDate: new Date().toISOString().split('T')[0],
+                                scheduledTime: '10:00 AM',
+                                rideOtp: '4892'
+                              });
+                            }
+                          }}
+                          className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs active:scale-95 transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          title="Schedule Rental for Date & Time"
+                        >
+                          <span>📅 Schedule</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             );
           })}
+          </div>
+
+          {/* Pagination Bar for 100+ Listings */}
+          {filteredRentals.length > 0 && (
+            <div className="p-4 rounded-2xl bg-white border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+              <div className="text-xs text-slate-600 font-medium">
+                Showing <strong className="text-slate-900">{pageSize === 'all' ? 1 : (currentPage - 1) * pageSize + 1}</strong> – <strong className="text-slate-900">{pageSize === 'all' ? filteredRentals.length : Math.min(currentPage * pageSize, filteredRentals.length)}</strong> of <strong className="text-amber-600 font-extrabold">{filteredRentals.length} Verified Fleet Listings</strong>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-bold">Show:</span>
+                {[12, 24, 'all'].map((sz) => (
+                  <button
+                    key={sz}
+                    onClick={() => { setPageSize(sz); setCurrentPage(1); }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-extrabold cursor-pointer transition-all ${
+                      pageSize === sz ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {sz === 'all' ? 'All (100+)' : sz}
+                  </button>
+                ))}
+              </div>
+
+              {pageSize !== 'all' && totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    Prev
+                  </button>
+
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, idx) => {
+                    const pageNum = idx + 1;
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-8 h-8 rounded-lg text-xs font-extrabold cursor-pointer transition-all ${
+                          currentPage === pageNum ? 'bg-amber-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  {totalPages > 5 && <span className="px-1 text-slate-400 text-xs font-bold">...</span>}
+
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-xs font-bold text-slate-700 cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

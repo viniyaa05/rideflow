@@ -29,6 +29,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { getRouteComparison, fetchRealRouteApi, KNOWN_LOCATIONS } from '../utils/fareEstimator';
 import { calculateSurgeMultiplier, calculateCarbonOffset, calculateGstBreakdown } from '../utils/surgePricing';
+import LocationAutocomplete from './LocationAutocomplete';
 
 export default function CompareAndBook({ initialFrom, initialTo, onSelectMode, onDirectBook }) {
   const { currentThemeMeta } = useTheme();
@@ -199,62 +200,38 @@ export default function CompareAndBook({ initialFrom, initialTo, onSelectMode, o
         {/* Origin / Destination Search Form */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200">
           
-          {/* From Input */}
-          <div className="lg:col-span-5 relative">
-            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              {t('pickupOrigin')}
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                list="known-locations"
-                value={fromLocation}
-                onChange={(e) => setFromLocation(e.target.value)}
-                placeholder="Enter pickup station, city, airport, landmark..."
-                style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-2xs"
-              />
-              <MapPin className="w-4 h-4 text-emerald-600 absolute left-3 top-3" />
-            </div>
+          {/* From Input with All-India Autocomplete */}
+          <div className="lg:col-span-5">
+            <LocationAutocomplete
+              label={t('pickupOrigin')}
+              value={fromLocation}
+              onChange={setFromLocation}
+              placeholder="Type any city, airport, station across India..."
+              icon={MapPin}
+            />
           </div>
 
           {/* Swap Button */}
           <div className="lg:col-span-2 flex justify-center py-1 lg:py-0">
             <button
               onClick={handleSwapLocations}
-              className="p-2.5 rounded-full bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 hover:text-slate-900 shadow-xs hover:scale-110 active:scale-95 transition-all cursor-pointer"
+              className="p-2.5 rounded-full bg-white hover:bg-slate-100 border border-slate-300 text-slate-600 hover:text-slate-900 shadow-xs hover:scale-110 active:scale-95 transition-all cursor-pointer mt-5"
               title="Swap Origin and Destination"
             >
               <ArrowRightLeft className="w-4 h-4 text-purple-600" />
             </button>
           </div>
 
-          {/* To Input */}
-          <div className="lg:col-span-5 relative">
-            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-indigo-500" />
-              {t('dropoffDestination')}
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                list="known-locations"
-                value={toLocation}
-                onChange={(e) => setToLocation(e.target.value)}
-                placeholder="Enter dropoff station, city, IT park, college..."
-                style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-2xs"
-              />
-              <Navigation className="w-4 h-4 text-indigo-600 absolute left-3 top-3" />
-            </div>
+          {/* To Input with All-India Autocomplete */}
+          <div className="lg:col-span-5">
+            <LocationAutocomplete
+              label={t('dropoffDestination')}
+              value={toLocation}
+              onChange={setToLocation}
+              placeholder="Type destination hub, corridor, town in India..."
+              icon={Navigation}
+            />
           </div>
-
-          <datalist id="known-locations">
-            {KNOWN_LOCATIONS.map((loc) => (
-              <option key={loc} value={loc} />
-            ))}
-          </datalist>
         </div>
 
         {/* Quick Route Preset Pills (Tamil Nadu Corridors) */}
@@ -412,7 +389,7 @@ export default function CompareAndBook({ initialFrom, initialTo, onSelectMode, o
           </button>
         </div>
 
-        {/* CARD 2: PRIVATE CHAUFFEUR CAB */}
+        {/* CARD 2: RIDE WITH DRIVER (CAR & BIKE) */}
         <div className="glass-panel p-5 rounded-3xl border border-slate-200 bg-white hover:shadow-xl transition-all flex flex-col justify-between space-y-5">
           <div className="space-y-3">
             <div className="flex items-start justify-between">
@@ -422,11 +399,11 @@ export default function CompareAndBook({ initialFrom, initialTo, onSelectMode, o
                 </div>
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900">{t('driverMode')}</h3>
-                  <span className="text-[10px] text-slate-500 font-medium">Swift Dzire / Innova XL</span>
+                  <span className="text-[10px] text-slate-500 font-medium">Driver with Car or Bike</span>
                 </div>
               </div>
               <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[9px] font-black uppercase">
-                Direct Dispatch
+                Driver + Vehicle
               </span>
             </div>
 
@@ -445,11 +422,15 @@ export default function CompareAndBook({ initialFrom, initialTo, onSelectMode, o
             <ul className="space-y-1.5 text-xs text-slate-600 font-medium">
               <li className="flex items-center gap-1.5">
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Zero wait dedicated cab</span>
+                <span>Car with Driver (AC/Non-AC, 1-6 seats)</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>4-digit Ride Start OTP</span>
+                <span>Bike with Driver (Solo Bike Taxi)</span>
+              </li>
+              <li className="flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span>4-digit Ride Start OTP verified</span>
               </li>
             </ul>
           </div>
@@ -458,7 +439,7 @@ export default function CompareAndBook({ initialFrom, initialTo, onSelectMode, o
             onClick={() => onSelectMode('drivers')}
             className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            <span>Choose Cab</span>
+            <span>Book Ride with Driver</span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

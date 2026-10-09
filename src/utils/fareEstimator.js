@@ -6,6 +6,8 @@
  */
 
 import { TN_LOCATIONS } from '../data/mockData.js';
+import { api } from '../services/api.js';
+import { ALL_INDIA_LOCATIONS } from './indiaLocations.js';
 
 // Comprehensive Pre-Indexed Geographic Coordinate Matrix for Tamil Nadu Hubs & Corridors
 export const TN_GEO_COORDINATES = {
@@ -76,7 +78,21 @@ export function getCoordinates(locationText = '') {
     }
   }
 
-  // 2. TN_LOCATIONS mock array matching
+  // 2. All-India locations dataset matching
+  const matchedIndia = ALL_INDIA_LOCATIONS.find((l) => {
+    const lName = l.name.toLowerCase();
+    const lCity = l.city.toLowerCase();
+    return clean === lName || clean.includes(lName) || lName.includes(clean) || (clean.includes(lCity) && clean.length > 3);
+  });
+  if (matchedIndia) {
+    return {
+      lat: matchedIndia.lat,
+      lng: matchedIndia.lng,
+      name: matchedIndia.name
+    };
+  }
+
+  // 3. TN_LOCATIONS mock array matching
   const matchedLocation = TN_LOCATIONS.find(l => l.toLowerCase().includes(clean) || clean.includes(l.toLowerCase()));
   if (matchedLocation) {
     const locClean = matchedLocation.toLowerCase();
@@ -160,43 +176,29 @@ export async function fetchRealRouteApi(fromText = 'Chennai Central', toText = '
     return samePlace;
   }
 
-  // 1. First priority: Call our Express Backend Route API (CORS-free, OSRM + Geocoding)
+  // 1. First priority: Call our Express Backend Route API via centralized api client
   try {
-    const backendEndpoints = [
-      `/api/route/distance?from=${encodeURIComponent(fromClean)}&to=${encodeURIComponent(toClean)}`,
-      `http://localhost:5000/api/route/distance?from=${encodeURIComponent(fromClean)}&to=${encodeURIComponent(toClean)}`
-    ];
-
-    for (const endpoint of backendEndpoints) {
-      try {
-        const res = await fetch(endpoint, { signal: AbortSignal.timeout(4000) });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.success && data.distanceKm > 0) {
-            const distanceKm = data.distanceKm;
-            const durationMins = data.durationMins || Math.max(12, Math.round(distanceKm * 1.6));
-            const result = {
-              distanceKm,
-              durationMins,
-              trafficMultiplier: distanceKm > 80 ? 1.05 : 1.2,
-              trafficLabel: distanceKm > 100 ? 'National Highway NH Corridor' : 'City & State Highway Corridor',
-              from: fromText,
-              to: toText,
-              originCoords: data.origin,
-              destCoords: data.destination,
-              isLiveApi: true,
-              source: data.source || 'osrm-live'
-            };
-            ROUTE_CACHE.set(cacheKey, result);
-            return result;
-          }
-        }
-      } catch (subErr) {
-        // Try next endpoint
-      }
+    const data = await api.getDistance(fromClean, toClean);
+    if (data && data.success && data.distanceKm > 0) {
+      const distanceKm = data.distanceKm;
+      const durationMins = data.durationMins || Math.max(12, Math.round(distanceKm * 1.6));
+      const result = {
+        distanceKm,
+        durationMins,
+        trafficMultiplier: distanceKm > 80 ? 1.05 : 1.2,
+        trafficLabel: distanceKm > 100 ? 'National Highway NH Corridor' : 'City & State Highway Corridor',
+        from: fromText,
+        to: toText,
+        originCoords: data.origin,
+        destCoords: data.destination,
+        isLiveApi: true,
+        source: data.source || 'osrm-live'
+      };
+      ROUTE_CACHE.set(cacheKey, result);
+      return result;
     }
   } catch (err) {
-    console.warn('[Backend Route API Warning]', err.message);
+    console.warn('[Backend Route API Notice]', err.message);
   }
 
   // 2. Client-side fallback to OSRM / Geocode if backend is unreachable

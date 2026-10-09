@@ -22,13 +22,14 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { TN_LOCATIONS } from '../data/mockData';
+import { TN_LOCATIONS, SEEDED_PERSONAS, ADMIN_CREDENTIALS } from '../data/mockData';
+import SuperAdminResponsePanel from './SuperAdminResponsePanel';
 
 export default function PartnerHubView() {
-  const { user, carpools, rentals, drivers, notifications, addRentalCar, addCarpoolRide, registerAsDriver } = useAuth();
+  const { user, carpools, rentals, drivers, notifications, addRentalCar, addCarpoolRide, registerAsDriver, switchPersona } = useAuth();
   const { t, currentLang } = useLanguage();
   
-  const [activePartnerTab, setActivePartnerTab] = useState('list-rental'); // 'list-rental' | 'offer-carpool' | 'register-driver' | 'my-listings'
+  const [activePartnerTab, setActivePartnerTab] = useState('list-rental'); // 'list-rental' | 'offer-carpool' | 'register-driver' | 'my-listings' | 'admin-console'
   const [toastMessage, setToastMessage] = useState('');
 
   // 1. Rental Vehicle Form
@@ -197,6 +198,22 @@ export default function PartnerHubView() {
             <ListFilter className="w-4 h-4" />
             <span>{t('activeListingsTab')} ({carpools.length + rentals.length})</span>
           </button>
+
+          {/* Dedicated Super Admin Console Tab in Profile */}
+          <button
+            onClick={() => setActivePartnerTab('admin-console')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all whitespace-nowrap cursor-pointer ${
+              activePartnerTab === 'admin-console'
+                ? 'bg-gradient-to-r from-rose-600 to-indigo-600 text-white shadow-md'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-rose-600" />
+            <span>Super Admin Console</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-rose-200 text-rose-900 font-black">
+              Q&A DESK
+            </span>
+          </button>
         </div>
       </div>
 
@@ -208,8 +225,53 @@ export default function PartnerHubView() {
         </div>
       )}
 
-      {/* TAB 4: ACTIVE COMMUNITY LISTINGS */}
-      {activePartnerTab === 'my-listings' ? (
+      {/* TAB: SUPER ADMIN CONSOLE IN ADMIN PROFILE */}
+      {activePartnerTab === 'admin-console' ? (
+        <div className="space-y-6 animate-fade-in">
+          {/* Admin Profile Identity Header */}
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 text-white flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-black text-xl shadow-md">
+                👑
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-extrabold text-white">
+                    Super Administrator Profile & Governance Desk
+                  </h3>
+                  <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 text-[10px] font-mono font-bold">
+                    ROOT ACCESS
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Officer: <strong>{user?.name || 'Super Admin Officer'}</strong> ({user?.email || 'admin@rideflow.in'}) • Direct User Q&A Terminal
+                </p>
+              </div>
+            </div>
+
+            {(!user?.isAdmin && user?.role !== 'SUPER_ADMIN') ? (
+              <button
+                onClick={() => {
+                  switchPersona(ADMIN_CREDENTIALS);
+                  showToast('✓ Switched to Super Admin Officer (admin@rideflow.in)!');
+                }}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold transition-all shadow-md flex items-center gap-2 cursor-pointer"
+              >
+                <span>Switch to Super Admin Officer</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <div className="px-3.5 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>Super Admin Authenticated</span>
+              </div>
+            )}
+          </div>
+
+          {/* Full Super Admin Interactive Q&A Response Panel */}
+          <SuperAdminResponsePanel />
+        </div>
+      ) : activePartnerTab === 'my-listings' ? (
         <div className="space-y-6 animate-fade-in">
           
           {/* Passenger Bookings for Your Rides */}

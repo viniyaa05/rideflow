@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.git
+.gitignore
+.env
+.env.local
+dist
+.vscode
+.idea
+*.log
+start-rideflow.bat
+render.yaml
+scratch_route_test.js

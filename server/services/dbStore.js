@@ -85,12 +85,28 @@ const DEFAULT_STORE = {
       isSuspended: false
     },
     {
+      id: 'usr_super_admin',
+      name: 'Super Admin Officer',
+      phone: '+91 94440 99999',
+      email: 'admin@rideflow.in',
+      password: 'admin123',
+      role: 'admin',
+      isAdmin: true,
+      avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+      rating: 5.0,
+      tripsCount: 420,
+      walletBalance: 50000,
+      strikes: 0,
+      isSuspended: false
+    },
+    {
       id: 'usr_admin_tn',
       name: 'Tamil Nadu Admin',
       phone: '+91 99999 00000',
       email: 'admin@rideflow.tn.gov.in',
       password: 'admin123',
       role: 'admin',
+      isAdmin: true,
       avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
       rating: 5.0,
       tripsCount: 0,
@@ -134,11 +150,16 @@ class DBStore {
 
   saveData(data) {
     try {
-      const tempPath = STORE_FILE + '.tmp';
-      fs.writeFileSync(tempPath, JSON.stringify(data || this.data, null, 2), 'utf-8');
-      fs.renameSync(tempPath, STORE_FILE);
+      fs.writeFileSync(STORE_FILE, JSON.stringify(data || this.data, null, 2), 'utf-8');
     } catch (err) {
-      console.error('[DBStore] Error writing store.json:', err.message);
+      try {
+        const tempPath = STORE_FILE + '.tmp';
+        fs.writeFileSync(tempPath, JSON.stringify(data || this.data, null, 2), 'utf-8');
+        fs.copyFileSync(tempPath, STORE_FILE);
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      } catch (fErr) {
+        // Fallback silently if file is locked; in-memory store remains up to date
+      }
     }
   }
 

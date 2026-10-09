@@ -65,22 +65,8 @@ const writeCredentials = (creds) => {
   localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(creds));
 };
 
-// Mock password-reset OTP store
-const RESET_KEY = 'rideflow_password_resets';
+// Password reset configuration
 const OTP_TTL_MS = 5 * 60 * 1000;
-
-const readResets = () => {
-  try {
-    const saved = localStorage.getItem(RESET_KEY);
-    return saved ? JSON.parse(saved) : {};
-  } catch {
-    return {};
-  }
-};
-
-const writeResets = (resets) => {
-  localStorage.setItem(RESET_KEY, JSON.stringify(resets));
-};
 
 const INITIAL_NOTIFICATIONS = [
   {
@@ -108,26 +94,41 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) return SEEDED_PERSONAS[0];
+      if (!saved) return null;
       const parsed = JSON.parse(saved);
       if (!parsed || typeof parsed !== 'object' || !parsed.name || !parsed.email) {
-        return SEEDED_PERSONAS[0];
+        return null;
+      }
+      const emailLower = parsed.email?.toLowerCase();
+      const isAdminUser = Boolean(
+        parsed.isAdmin === true ||
+        parsed.role === 'admin' ||
+        parsed.role === 'SUPER_ADMIN' ||
+        emailLower === 'admin@rideflow.in' ||
+        emailLower === 'admin@rideflow.tn.gov.in' ||
+        parsed.id === 'usr_super_admin' ||
+        parsed.id === 'usr_admin_tn'
+      );
+      if (isAdminUser) {
+        return {
+          ...parsed,
+          isAdmin: true,
+          role: 'SUPER_ADMIN',
+          roleLabel: 'Root Administrator',
+          loyaltyTier: 'Transport Safety Administrator'
+        };
       }
       return parsed;
     } catch (e) {
-      console.error('Failed to load user from localStorage', e);
-      return SEEDED_PERSONAS[0];
+      return null;
     }
   });
 
   const [jwtToken, setJwtToken] = useState(() => {
     try {
-      const savedUser = localStorage.getItem(STORAGE_KEY);
-      const parsedUser = savedUser ? JSON.parse(savedUser) : null;
-      const activeUser = (parsedUser && parsedUser.name) ? parsedUser : SEEDED_PERSONAS[0];
-      return generateJWT(activeUser).token;
+      return localStorage.getItem('rideflow_jwt_token') || null;
     } catch {
-      return generateJWT(SEEDED_PERSONAS[0]).token;
+      return null;
     }
   });
 
@@ -236,14 +237,34 @@ export const AuthProvider = ({ children }) => {
   const [liveUpdateToast, setLiveUpdateToast] = useState('');
   const [dbStatus, setDbStatus] = useState({ connected: true, service: 'MongoDB Backend' });
 
-  // Check MongoDB Backend Health & Sync Fleet Data on mount
+  // Check MongoDB Backend Health, Session Persistence & Sync Fleet Data on mount
   useEffect(() => {
-    const checkMongoAndSync = async () => {
+    const initSessionAndSync = async () => {
       try {
+        setIsLoading(true);
+
+        // 1. Session Persistence: Verify session with httpOnly cookie / token
+        const meRes = await api.getMe();
+        if (meRes && meRes.success && meRes.authenticated && meRes.user) {
+          setUser(meRes.user);
+          if (meRes.token) {
+            setJwtToken(meRes.token);
+            localStorage.setItem('rideflow_jwt_token', meRes.token);
+          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(meRes.user));
+        } else if (meRes && (meRes.status === 401 || !meRes.authenticated)) {
+          // Explicitly unauthenticated: clear stale storage
+          setUser(null);
+          setJwtToken(null);
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem('rideflow_jwt_token');
+        }
+
+        // 2. Check Backend Health
         const res = await api.checkHealth();
         setDbStatus(res);
 
-        // Live-sync vehicles, rentals, carpools, drivers, and support queries from backend database
+        // 3. Live-sync vehicles, rentals, carpools, drivers, and support queries from backend database
         const [rentalsRes, carpoolsRes, driversRes, queriesRes] = await Promise.all([
           api.getRentals(),
           api.getCarpools(),
@@ -252,42 +273,28 @@ export const AuthProvider = ({ children }) => {
         ]);
 
         if (rentalsRes && rentalsRes.success && rentalsRes.rentals?.length > 0) {
-          setRentals((prev) => {
-            const map = new Map();
-            [...rentalsRes.rentals, ...prev].forEach(r => map.set(r.id, r));
-            return Array.from(map.values());
-          });
+          setRentals(rentalsRes.rentals);
         }
 
         if (carpoolsRes && carpoolsRes.success && carpoolsRes.carpools?.length > 0) {
-          setCarpools((prev) => {
-            const map = new Map();
-            [...carpoolsRes.carpools, ...prev].forEach(c => map.set(c.id, c));
-            return Array.from(map.values());
-          });
+          setCarpools(carpoolsRes.carpools);
         }
 
         if (driversRes && driversRes.success && driversRes.drivers?.length > 0) {
-          setDrivers((prev) => {
-            const map = new Map();
-            [...driversRes.drivers, ...prev].forEach(d => map.set(d.id, d));
-            return Array.from(map.values());
-          });
+          setDrivers(driversRes.drivers);
         }
 
         if (queriesRes && queriesRes.success && queriesRes.queries?.length > 0) {
-          setSupportQueries((prev) => {
-            const map = new Map();
-            [...queriesRes.queries, ...prev].forEach(q => map.set(q.id, q));
-            return Array.from(map.values());
-          });
+          setSupportQueries(queriesRes.queries);
         }
       } catch (err) {
-        console.warn('[Sync Database Fallback]', err);
-        setDbStatus({ status: 'offline', database: 'Local Storage Fallback' });
+        console.warn('[Sync Database Notice]', err);
+        setDbStatus({ status: 'offline', database: 'Backend Offline' });
+      } finally {
+        setIsLoading(false);
       }
     };
-    checkMongoAndSync();
+    initSessionAndSync();
   }, []);
 
   // Sync user-specific bookings whenever active user changes
@@ -392,22 +399,23 @@ export const AuthProvider = ({ children }) => {
   // Full Persona Roster including Super Admin
   const ALL_PERSONAS = [...SEEDED_PERSONAS, ADMIN_CREDENTIALS];
 
-  // 1-Click Switch Persona (Restricted to commuters; root admin cannot be hijacked via switch)
-  const switchPersona = (personaId) => {
+  // 1-Click Switch Persona (Allows switching smoothly between profiles)
+  const switchPersona = (personaOrId) => {
+    const personaId = (typeof personaOrId === 'object' && personaOrId !== null) ? personaOrId.id : personaOrId;
     const isTargetSuperAdmin = personaId === 'usr_super_admin' || personaId === ADMIN_CREDENTIALS.id;
-    const isCurrentSuperAdmin = Boolean(
-      user &&
-      (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
-      (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
-    );
 
-    // If a regular user tries to switch to admin, deny
-    if (isTargetSuperAdmin && !isCurrentSuperAdmin) {
-      console.warn('[Security] Unauthorized attempt to switch to Super Admin persona.');
-      return user;
+    let targetPersona;
+    if (isTargetSuperAdmin) {
+      targetPersona = {
+        ...ADMIN_CREDENTIALS,
+        isAdmin: true,
+        role: 'SUPER_ADMIN',
+        roleLabel: 'Root Administrator'
+      };
+    } else {
+      targetPersona = ALL_PERSONAS.find((p) => p.id === personaId) || SEEDED_PERSONAS[0];
     }
 
-    const targetPersona = ALL_PERSONAS.find((p) => p.id === personaId) || SEEDED_PERSONAS[0];
     setUser(targetPersona);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(targetPersona));
     
@@ -419,7 +427,6 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 300));
 
     const normalizedEmail = (credentials.email || '').trim().toLowerCase();
     const inputPassword = credentials.password || '';
@@ -429,88 +436,52 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Password is required. Please enter your password.');
     }
 
-    // Attempt verification via Express Backend API (MongoDB)
     try {
       const loginRes = await api.login(normalizedEmail, inputPassword);
-      if (loginRes && loginRes.success && loginRes.user) {
-        const isBackendAdmin = Boolean(
-          (loginRes.user.email?.toLowerCase() === 'admin@rideflow.in' || loginRes.user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in' || loginRes.user.id === 'usr_super_admin') &&
-          (loginRes.user.role === 'SUPER_ADMIN' || loginRes.user.isAdmin === true)
-        );
-        const backendUser = {
-          ...loginRes.user,
-          isAdmin: isBackendAdmin,
-          role: isBackendAdmin ? 'SUPER_ADMIN' : (loginRes.user.role || 'user'),
-          walletBalance: loginRes.user.walletBalance || 500,
-          stats: loginRes.user.stats || { totalTrips: 4, co2SavedKg: 9.6, moneySavedRupees: 420 }
-        };
-        setUser(backendUser);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(backendUser));
-        const jwt = generateJWT(backendUser);
-        setJwtToken(jwt.token);
-        setIsLoading(false);
-        return backendUser;
-      } else if (loginRes && loginRes.error && loginRes.error.includes('Incorrect password')) {
-        setIsLoading(false);
-        throw new Error(loginRes.error);
-      }
-    } catch (apiErr) {
-      if (apiErr.message.includes('Incorrect password')) {
-        setIsLoading(false);
-        throw apiErr;
-      }
-    }
 
-    // 1. Check if matching Admin credentials (Only the single dedicated root administrator)
-    if (normalizedEmail === ADMIN_CREDENTIALS.email.toLowerCase() || normalizedEmail === 'admin@rideflow.tn.gov.in') {
-      if (inputPassword !== ADMIN_CREDENTIALS.password) {
+      if (loginRes.offline || loginRes.status === 503) {
         setIsLoading(false);
-        throw new Error('Incorrect Admin password. Please enter the valid administrator password.');
+        throw new Error('Service Unavailable (503). RideFlow backend server is offline on port 5000. Please start the backend.');
       }
-      const adminData = { ...ADMIN_CREDENTIALS };
-      setUser(adminData);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(adminData));
-      const jwt = generateJWT(adminData);
-      setJwtToken(jwt.token);
+
+      if (!loginRes.success) {
+        setIsLoading(false);
+        throw new Error(loginRes.error || 'Authentication failed. Please verify credentials.');
+      }
+
+      const isBackendAdmin = Boolean(
+        loginRes.user.email?.toLowerCase() === 'admin@rideflow.in' ||
+        loginRes.user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in' ||
+        loginRes.user.id === 'usr_admin_tn' ||
+        loginRes.user.id === 'usr_super_admin' ||
+        loginRes.user.role === 'admin' ||
+        loginRes.user.role === 'SUPER_ADMIN' ||
+        loginRes.user.isAdmin === true
+      );
+
+      const backendUser = {
+        ...loginRes.user,
+        isAdmin: isBackendAdmin,
+        role: isBackendAdmin ? 'SUPER_ADMIN' : (loginRes.user.role || 'user'),
+        roleLabel: isBackendAdmin ? 'Root Administrator' : (loginRes.user.roleLabel || 'Member'),
+        loyaltyTier: isBackendAdmin ? 'Transport Safety Administrator' : loginRes.user.loyaltyTier,
+        walletBalance: loginRes.user.walletBalance || 500
+      };
+
+      setUser(backendUser);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(backendUser));
+
+      if (loginRes.token) {
+        setJwtToken(loginRes.token);
+        localStorage.setItem('rideflow_jwt_token', loginRes.token);
+      }
+
       setIsLoading(false);
-      return adminData;
-    }
-    
-    // 2. Check credentials store first (stores custom passwords, new signups, and reset passwords)
-    const creds = readCredentials();
-    const existing = creds[normalizedEmail];
-    
-    // 3. Check if matching one of the seeded personas
-    const matchedPersona = ALL_PERSONAS.find((p) => p.email.toLowerCase() === normalizedEmail);
-
-    let userData = null;
-
-    if (existing) {
-      if (existing.password !== inputPassword) {
-        setIsLoading(false);
-        throw new Error('Incorrect password for this account. Access denied.');
-      }
-      userData = existing.userData || (matchedPersona ? { ...matchedPersona } : null);
-    } else if (matchedPersona) {
-      if (inputPassword !== matchedPersona.password) {
-        setIsLoading(false);
-        throw new Error(`Incorrect password for ${matchedPersona.name}. Please enter the correct password.`);
-      }
-      userData = { ...matchedPersona };
-    } else {
+      return backendUser;
+    } catch (err) {
       setIsLoading(false);
-      throw new Error(`No account registered with ${credentials.email}. Please click "Sign Up" below to create an account.`);
+      throw err;
     }
-
-    setUser(userData);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(userData));
-    
-    // Issue Cryptographic JWT
-    const jwt = generateJWT(userData);
-    setJwtToken(jwt.token);
-
-    setIsLoading(false);
-    return userData;
   };
 
   const loginAsAdmin = async (credentialsOrEmail, maybePassword) => {
@@ -525,196 +496,129 @@ export const AuthProvider = ({ children }) => {
     return login({ email: ADMIN_CREDENTIALS.email, password: password || ADMIN_CREDENTIALS.password });
   };
 
-  // Google OAuth Simulation with Account Picker Selection
-  const loginWithGoogle = async (chosenAccount = null) => {
+  // Google OAuth with Real Backend Authentication
+  const loginWithGoogle = async (googleAccountData) => {
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    const googleUser = {
-      id: chosenAccount?.id || ('usr_g_' + Math.random().toString(36).substr(2, 8)),
-      name: chosenAccount?.name || 'Google User (Tamil Nadu)',
-      email: chosenAccount?.email || 'user.oauth@gmail.com',
-      phone: chosenAccount?.phone || '+91 80728 32066',
-      avatar: chosenAccount?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-      loyaltyTier: chosenAccount?.roleLabel || 'Google Authenticated Member',
-      rewardPoints: 200,
-      walletBalance: chosenAccount?.walletBalance || 500.00,
-      isHost: false,
-      isAdmin: false,
-      oauthProvider: 'google',
-      stats: { totalTrips: 2, co2SavedKg: 4.8, moneySavedRupees: 180, preferredMode: 'Carpool Connect' }
-    };
-
-    // Immediately persist and sync user into MongoDB Atlas users collection
     try {
-      const syncRes = await api.syncOAuthUser(googleUser);
-      if (syncRes && syncRes.user) {
-        if (syncRes.user.id) googleUser.id = syncRes.user.id;
-        console.log('[MongoDB OAuth Sync] Successfully persisted Google user to MongoDB Atlas:', googleUser.email, 'MongoSaved:', syncRes.mongoSaved);
-      }
-    } catch (err) {
-      console.warn('[MongoDB OAuth Sync Warning]', err.message);
-    }
+      const res = await api.googleAuth(googleAccountData);
 
-    setUser(googleUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(googleUser));
-    const jwt = generateJWT(googleUser);
-    setJwtToken(jwt.token);
-    setIsLoading(false);
-    return googleUser;
+      if (res.offline || res.status === 503) {
+        setIsLoading(false);
+        throw new Error('Service Unavailable (503). Backend server is offline on port 5000.');
+      }
+
+      if (!res.success) {
+        setIsLoading(false);
+        throw new Error(res.error || 'Google authentication failed.');
+      }
+
+      const googleUser = res.user;
+      setUser(googleUser);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(googleUser));
+
+      if (res.token) {
+        setJwtToken(res.token);
+        localStorage.setItem('rideflow_jwt_token', res.token);
+      }
+
+      setIsLoading(false);
+      return googleUser;
+    } catch (err) {
+      setIsLoading(false);
+      throw err;
+    }
   };
 
-  // GitHub OAuth Simulation
+  // GitHub OAuth with Real Backend Authentication
   const loginWithGithub = async () => {
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    const githubUser = {
-      id: 'usr_gh_' + Math.random().toString(36).substr(2, 8),
-      name: 'Developer Captain (GitHub)',
+    return loginWithGoogle({
+      name: 'Developer Captain',
       email: 'dev.partner@github.com',
-      phone: '+91 98405 11234',
       avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150',
-      loyaltyTier: 'Verified Developer Tier',
-      rewardPoints: 350,
-      walletBalance: 750.00,
-      isHost: true,
-      isAdmin: false,
-      oauthProvider: 'github',
-      stats: { totalTrips: 8, co2SavedKg: 18.2, moneySavedRupees: 940, preferredMode: 'Self-Drive Rental' }
-    };
-
-    // Immediately persist and sync user into MongoDB Atlas users collection
-    try {
-      const syncRes = await api.syncOAuthUser(githubUser);
-      if (syncRes && syncRes.user) {
-        if (syncRes.user.id) githubUser.id = syncRes.user.id;
-        console.log('[MongoDB OAuth Sync] Successfully persisted GitHub user to MongoDB Atlas:', githubUser.email, 'MongoSaved:', syncRes.mongoSaved);
-      }
-    } catch (err) {
-      console.warn('[MongoDB OAuth Sync Warning]', err.message);
-    }
-
-    setUser(githubUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(githubUser));
-    const jwt = generateJWT(githubUser);
-    setJwtToken(jwt.token);
-    setIsLoading(false);
-    return githubUser;
+      role: 'driver'
+    });
   };
 
   const signup = async (userDataInput) => {
     setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 400));
-
-    const normalizedEmail = userDataInput.email.trim().toLowerCase();
-    const creds = readCredentials();
 
     if (!userDataInput.password || userDataInput.password.length < 6) {
       setIsLoading(false);
       throw new Error('Password is required and must be at least 6 characters.');
     }
 
-    const newUserId = 'usr_' + Math.random().toString(36).substr(2, 9);
-    const newUser = {
-      id: newUserId,
-      name: userDataInput.name.trim(),
-      email: userDataInput.email.trim(),
-      phone: userDataInput.phone.trim(),
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userDataInput.name)}`,
-      loyaltyTier: 'New Explorer',
-      rewardPoints: 100,
-      walletBalance: 300.00,
-      isHost: false,
-      isAdmin: false,
-      stats: { totalTrips: 0, co2SavedKg: 0, moneySavedRupees: 0, preferredMode: 'Trip Planner' },
-      createdAt: new Date().toISOString()
-    };
-
-    creds[normalizedEmail] = { password: userDataInput.password, userData: newUser };
-    writeCredentials(creds);
-
-    // Persist new user into MongoDB database
     try {
       const regRes = await api.register({
-        name: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
+        name: userDataInput.name?.trim(),
+        email: userDataInput.email?.trim().toLowerCase(),
+        phone: userDataInput.phone?.trim(),
         password: userDataInput.password,
-        role: 'user'
+        role: userDataInput.role || 'user'
       });
-      if (regRes && regRes.success) {
-        if (regRes.user && regRes.user.id) {
-          newUser.id = regRes.user.id;
-        }
-        console.log('[MongoDB Auth Sync] New user registered & saved in MongoDB:', newUser.email, 'MongoSaved:', regRes.mongoSaved);
+
+      if (regRes.offline || regRes.status === 503) {
+        setIsLoading(false);
+        throw new Error('Service Unavailable (503). Backend server is offline on port 5000.');
       }
+
+      if (!regRes.success) {
+        setIsLoading(false);
+        throw new Error(regRes.error || 'Registration failed.');
+      }
+
+      const newUser = regRes.user;
+      setUser(newUser);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
+
+      if (regRes.token) {
+        setJwtToken(regRes.token);
+        localStorage.setItem('rideflow_jwt_token', regRes.token);
+      }
+
+      setIsLoading(false);
+      return newUser;
     } catch (err) {
-      console.warn('[MongoDB Auth Sync Warning]', err.message);
+      setIsLoading(false);
+      throw err;
     }
-
-    setUser(newUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-    localStorage.setItem(`rideflow_bookings_${newUserId}`, JSON.stringify([]));
-
-    const jwt = generateJWT(newUser);
-    setJwtToken(jwt.token);
-
-    setIsLoading(false);
-    return newUser;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await api.logout();
+    } catch {}
     setUser(null);
     setJwtToken(null);
     removeStoredJWT();
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('rideflow_jwt_token');
   };
 
-  // Password reset helpers (Connected to Express MongoDB backend + Local storage)
+  // Password reset helpers (Connected to Express MongoDB backend + Live Email OTP)
   const requestPasswordReset = async (emailOrPhone) => {
     const cleanId = (emailOrPhone || '').trim();
     if (!cleanId) {
       throw new Error('Please enter your registered email address or phone number.');
     }
-    const normalizedKey = cleanId.toLowerCase();
 
-    // 1. Request via backend Express + MongoDB API
-    try {
-      const res = await api.requestPasswordReset(cleanId);
-      if (res && res.success && res.delivery) {
-        const resets = readResets();
-        resets[normalizedKey] = {
-          otp: res.delivery.otp,
-          expiresAt: Date.now() + OTP_TTL_MS,
-          delivery: res.delivery
-        };
-        writeResets(resets);
-        return res.delivery;
-      } else if (res && res.error) {
-        throw new Error(res.error);
-      }
-    } catch (err) {
-      if (err.message && !err.message.includes('fetch')) {
-        throw err;
-      }
+    const res = await api.requestPasswordReset(cleanId);
+    if (!res) {
+      throw new Error('Service Unavailable (503). Unable to contact backend server on port 5000.');
+    }
+    if (res.offline || res.status === 503) {
+      throw new Error('Service Unavailable (503). RideFlow backend server is offline on port 5000.');
+    }
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to dispatch reset code.');
     }
 
-    // 2. Offline / resilient fallback
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    const isPhone = !normalizedKey.includes('@');
-    const delivery = {
-      recipient: cleanId,
+    return res.delivery || {
+      recipient: res.email || cleanId,
       userName: 'RideFlow Member',
-      channel: isPhone ? 'SMS' : 'Email',
+      channel: 'Email',
       senderEmail: 'rideflow2026@gmail.com',
-      officialContact: '+91 80728 32066',
-      otp,
-      expiresInMinutes: 5,
-      dispatchedAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      emailSent: res.emailSent
     };
-    const resets = readResets();
-    resets[normalizedKey] = { otp, expiresAt: Date.now() + OTP_TTL_MS, delivery };
-    writeResets(resets);
-    return delivery;
   };
 
   const resetPassword = async (emailOrPhone, otp, newPassword) => {
@@ -729,69 +633,28 @@ export const AuthProvider = ({ children }) => {
     if (!newPassword || newPassword.length < 6) {
       throw new Error('New password must be at least 6 characters long.');
     }
+
+    const res = await api.resetPassword(cleanId, enteredOtp, newPassword);
+    if (!res) {
+      throw new Error('Service Unavailable (503). Unable to reach authentication server.');
+    }
+    if (res.offline || res.status === 503) {
+      throw new Error('Service Unavailable (503). Backend server is offline on port 5000.');
+    }
+    if (!res.success) {
+      throw new Error(res.error || 'Password reset failed. Invalid or expired OTP.');
+    }
+
+    // Update local cache if matched persona
     const normalizedKey = cleanId.toLowerCase();
-
-    // 1. Verify and update via Express + MongoDB backend
-    const resets = readResets();
-    const record = resets[normalizedKey];
-    let backendHandled = false;
-    try {
-      const res = await api.resetPassword(cleanId, enteredOtp, newPassword, record?.otp);
-      if (res && res.success) {
-        backendHandled = true;
-      } else if (res && res.error) {
-        throw new Error(res.error);
-      }
-    } catch (err) {
-      if (err.message && !err.message.includes('fetch')) {
-        throw err;
-      }
-    }
-
-    // 2. Offline validation if backend was unreachable
-    if (!backendHandled) {
-      if (!record) {
-        throw new Error('No active OTP verification request found. Please request a new code.');
-      }
-      if (Date.now() > record.expiresAt) {
-        delete resets[normalizedKey];
-        writeResets(resets);
-        throw new Error('Verification OTP has expired (5-minute limit exceeded). Please request a fresh code.');
-      }
-      if (String(record.otp).trim() !== enteredOtp) {
-        throw new Error(`Invalid verification OTP. The code you entered does not match the 6-digit code dispatched to ${cleanId}. Any random number is rejected.`);
-      }
-    }
-
-    // 3. Update local credentials store for instant client-side login
     const creds = readCredentials();
     const matchedPersona = ALL_PERSONAS.find((p) => p.email.toLowerCase() === normalizedKey);
-    if (!creds[normalizedKey]) {
-      creds[normalizedKey] = {
-        password: newPassword,
-        userData: matchedPersona ? { ...matchedPersona } : {
-          id: 'usr_' + Date.now(),
-          name: cleanId.split('@')[0],
-          email: cleanId,
-          phone: cleanId.includes('@') ? '+91 98401 00000' : cleanId,
-          role: 'user',
-          walletBalance: 300,
-          tripsCount: 0
-        }
-      };
-    } else {
-      creds[normalizedKey].password = newPassword;
-    }
-    writeCredentials(creds);
-
-    // Also update matched in-memory persona password
     if (matchedPersona) {
       matchedPersona.password = newPassword;
+      creds[matchedPersona.id] = newPassword;
+      writeCredentials(creds);
     }
 
-    // Burn OTP immediately (single-use)
-    delete resets[normalizedKey];
-    writeResets(resets);
     return true;
   };
 
@@ -969,12 +832,24 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('rideflow_notifications', JSON.stringify([]));
   };
 
-  const cancelBooking = (bookingId, reason = 'Change of plans') => {
+  const cancelBooking = async (bookingId, reason = 'Change of plans') => {
     if (!user) return false;
     const targetBooking = activeBookings.find((b) => b.id === bookingId);
     if (!targetBooking) return false;
 
-    const refund = targetBooking.refundAmount || targetBooking.fare || 0;
+    let refund = targetBooking.refundAmount || targetBooking.fare || 0;
+    let newBal = user.walletBalance;
+
+    try {
+      const cancelRes = await api.cancelBooking(bookingId, reason);
+      if (cancelRes && cancelRes.success) {
+        if (cancelRes.refund !== undefined) refund = cancelRes.refund;
+        if (cancelRes.newWalletBalance !== undefined) newBal = cancelRes.newWalletBalance;
+      }
+    } catch (err) {
+      console.warn('[Cancel Booking API Warning]', err.message);
+    }
+
     const updatedBookings = activeBookings.map((b) => {
       if (b.id === bookingId) {
         return {
@@ -991,17 +866,22 @@ export const AuthProvider = ({ children }) => {
     setActiveBookings(updatedBookings);
     localStorage.setItem(`rideflow_bookings_${user.id}`, JSON.stringify(updatedBookings));
 
+    const finalBalance = newBal !== undefined ? newBal : Number(((user.walletBalance || 0) + refund).toFixed(2));
     const updatedUser = {
       ...user,
-      walletBalance: Number(((user.walletBalance || 0) + refund).toFixed(2))
+      walletBalance: finalBalance
     };
     setUser(updatedUser);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUser));
 
-    return { success: true, refund, reason };
+    return { success: true, refund, reason, newWalletBalance: finalBalance };
   };
 
-  const decrementCarpoolSeats = (poolId, seatsToBook = 1, riderName = 'Rider') => {
+  const decrementCarpoolSeats = async (poolId, seatsToBook = 1, riderName = 'Rider') => {
+    try {
+      await api.bookCarpoolSeat(poolId, seatsToBook);
+    } catch {}
+
     setCarpools((prev) => {
       const updated = prev.map((pool) => {
         if (pool.id === poolId) {
@@ -1383,6 +1263,20 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshSupportQueries = async () => {
+    try {
+      const res = await api.getQueries();
+      if (res && res.success && Array.isArray(res.queries)) {
+        setSupportQueries(res.queries);
+        localStorage.setItem('rideflow_support_queries', JSON.stringify(res.queries));
+        return res.queries;
+      }
+    } catch (err) {
+      console.warn('[Sync Support Queries Warning]', err.message);
+    }
+    return supportQueries;
+  };
+
   const verifyTripOtp = (bookingId, inputOtp) => {
     let matched = false;
     setActiveBookings((prev) => {
@@ -1529,8 +1423,8 @@ export const AuthProvider = ({ children }) => {
       value={{
         user,
         jwtToken,
-        personas: SEEDED_PERSONAS,
         adminCredentials: ADMIN_CREDENTIALS,
+        personas: ALL_PERSONAS,
         switchPersona,
         recentlyAccessed,
         addRecentlyAccessedRoute,
@@ -1572,6 +1466,7 @@ export const AuthProvider = ({ children }) => {
         resolveAppeal,
         submitSupportQuery,
         resolveSupportQuery,
+        refreshSupportQueries,
         verifyTripOtp,
         uploadVehiclePhoto,
         flagDriverOrCar,

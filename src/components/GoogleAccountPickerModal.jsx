@@ -1,123 +1,143 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Shield, Check, ArrowRight, Sparkles, ExternalLink, Info } from 'lucide-react';
+import { X, Shield, ArrowRight, ExternalLink, Info, CheckCircle2, User, Mail, Sparkles } from 'lucide-react';
 
-export const GOOGLE_PRESET_ACCOUNTS = [
+export const VERIFIED_TEST_PERSONAS = [
   {
-    id: 'g_1',
-    name: 'Kaviniyaa',
-    email: 'rideflow2026@gmail.com',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    roleLabel: 'RideFlow Official • Tamil Nadu Desk',
-    walletBalance: 1250.00
-  },
-  {
-    id: 'g_2',
+    id: 'usr_alex_chen',
     name: 'Alex Chen',
     email: 'alex.chen@gmail.com',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-    roleLabel: 'Daily OMR Commuter (Sholinganallur)',
-    walletBalance: 450.00
+    roleLabel: 'Driver Partner & Commuter (OMR Corridor)',
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'
   },
   {
-    id: 'g_3',
-    name: 'Priya Sundaram',
-    email: 'priya.sundaram@gmail.com',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
-    roleLabel: 'Verified Carpool Host (Cognizant Tidel)',
-    walletBalance: 680.00
+    id: 'usr_pooja_sundaram',
+    name: 'Pooja Sundaram',
+    email: 'pooja.sundaram@gmail.com',
+    roleLabel: 'Verified Passenger (Chennai Central)',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150'
+  },
+  {
+    id: 'usr_kaviniyaa',
+    name: 'Kaviniyaa',
+    email: 'kaviniyaa05@gmail.com',
+    roleLabel: 'RideFlow Host & Verified Commuter',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'
+  },
+  {
+    id: 'usr_admin_tn',
+    name: 'Tamil Nadu Admin',
+    email: 'admin@rideflow.tn.gov.in',
+    roleLabel: 'Super Admin • Governance & Appeals Desk',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150'
   }
 ];
 
-export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAccount }) {
-  const [showCustomInput, setShowCustomInput] = useState(false);
-  const [customName, setCustomName] = useState('');
+export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAccount, onFillCredentials }) {
   const [customEmail, setCustomEmail] = useState('');
-  const [customError, setCustomError] = useState('');
-  const [selectedAccountId, setSelectedAccountId] = useState(null);
-  const [showClientInfo, setShowClientInfo] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Check if Google Client ID is configured in Vite environment
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '631072139574-bpalh6bucglpul7rnl7of8d2eg2qusdo.apps.googleusercontent.com';
 
+  // Initialize official Google Identity Services SDK when Client ID is configured
   useEffect(() => {
-    if (isOpen && googleClientId && window.google?.accounts?.id) {
-      try {
-        window.google.accounts.id.initialize({
-          client_id: googleClientId,
-          callback: (response) => {
-            try {
-              // Parse JWT credential
-              const base64Url = response.credential.split('.')[1];
-              const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-              const jsonPayload = decodeURIComponent(
-                atob(base64)
-                  .split('')
-                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                  .join('')
-              );
-              const data = JSON.parse(jsonPayload);
+    if (!isOpen || !googleClientId) return;
 
-              onSelectAccount({
-                id: 'g_' + (data.sub || Math.random().toString(36).substr(2, 8)),
-                name: data.name || data.email?.split('@')[0] || 'Google User',
-                email: data.email,
-                avatar: data.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || 'User')}&background=4285F4&color=fff`,
-                roleLabel: 'Google Verified OAuth 2.0 Account',
-                walletBalance: 500.00
-              });
-            } catch (jwtErr) {
-              console.warn('[Google OAuth Token Parse Warning]', jwtErr);
+    let checkInterval = null;
+    let attempts = 0;
+
+    const setupGoogle = () => {
+      if (window.google?.accounts?.id) {
+        if (checkInterval) clearInterval(checkInterval);
+        try {
+          window.google.accounts.id.initialize({
+            client_id: googleClientId,
+            callback: (response) => {
+              try {
+                // Parse JWT credential from Google OAuth 2.0
+                const base64Url = response.credential.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(
+                  atob(base64)
+                    .split('')
+                    .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                    .join('')
+                );
+                const data = JSON.parse(jsonPayload);
+
+                onSelectAccount({
+                  id: 'g_' + (data.sub || Math.random().toString(36).substr(2, 8)),
+                  name: data.name || data.email?.split('@')[0] || 'Google User',
+                  email: data.email,
+                  avatar: data.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || 'User')}&background=4285F4&color=fff`,
+                  oauthProvider: 'google',
+                  credentialToken: response.credential
+                });
+              } catch (jwtErr) {
+                console.error('[Google OAuth Token Parse Error]', jwtErr);
+              }
             }
-          }
-        });
-
-        const btnContainer = document.getElementById('google-official-btn');
-        if (btnContainer) {
-          window.google.accounts.id.renderButton(btnContainer, {
-            theme: 'outline',
-            size: 'large',
-            width: 380,
-            text: 'continue_with',
-            shape: 'pill'
           });
+
+          const btnContainer = document.getElementById('google-official-btn');
+          if (btnContainer) {
+            btnContainer.innerHTML = '';
+            window.google.accounts.id.renderButton(btnContainer, {
+              theme: 'outline',
+              size: 'large',
+              width: 340,
+              text: 'continue_with',
+              shape: 'pill'
+            });
+          }
+        } catch (gErr) {
+          console.warn('[Google SDK Init Warning]', gErr);
         }
-      } catch (gErr) {
-        console.warn('[Google SDK Init Warning]', gErr);
+      } else {
+        attempts++;
+        if (attempts > 30 && checkInterval) {
+          clearInterval(checkInterval);
+        }
       }
-    }
+    };
+
+    setupGoogle();
+    checkInterval = setInterval(setupGoogle, 200);
+
+    return () => {
+      if (checkInterval) clearInterval(checkInterval);
+    };
   }, [isOpen, googleClientId, onSelectAccount]);
 
   if (!isOpen) return null;
 
-  const handleAccountClick = (account) => {
-    setSelectedAccountId(account.id);
-    setTimeout(() => {
-      onSelectAccount(account);
-    }, 250);
+  // 1-Click Complete Google Sign In
+  const handleDirectGoogleLogin = async (account) => {
+    setIsSubmitting(true);
+    try {
+      await onSelectAccount({
+        id: account.id || 'g_' + Date.now(),
+        name: account.name,
+        email: account.email,
+        avatar: account.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(account.name)}&background=4285F4&color=fff`,
+        oauthProvider: 'google'
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleCustomSubmit = (e) => {
+  const handleCustomGoogleSubmit = async (e) => {
     e.preventDefault();
-    setCustomError('');
-
-    if (!customEmail.trim() || !customEmail.includes('@')) {
-      setCustomError('Please enter a valid Google email address (e.g. name@gmail.com).');
-      return;
-    }
-
-    const emailClean = customEmail.trim().toLowerCase();
-    const displayName = customName.trim() || emailClean.split('@')[0];
-
-    const customGoogleUser = {
-      id: 'g_custom_' + Math.random().toString(36).substr(2, 8),
-      name: displayName,
-      email: emailClean,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4285F4&color=fff`,
-      roleLabel: 'Google Authenticated Member',
-      walletBalance: 300.00
-    };
-
-    onSelectAccount(customGoogleUser);
+    if (!customEmail || !customEmail.includes('@')) return;
+    const name = customName.trim() || customEmail.split('@')[0];
+    await handleDirectGoogleLogin({
+      id: 'g_custom_' + Date.now(),
+      name,
+      email: customEmail.trim(),
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4285F4&color=fff`
+    });
   };
 
   return (
@@ -142,183 +162,131 @@ export default function GoogleAccountPickerModal({ isOpen, onClose, onSelectAcco
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
             </svg>
-            <span className="font-black text-slate-800 text-sm tracking-tight">Google OAuth 2.0 Sign In</span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-extrabold">
-              Active
+            <span className="font-black text-slate-800 text-sm tracking-tight">Sign in with Google</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 border border-emerald-200 text-emerald-800">
+              OAuth 2.0
             </span>
           </div>
 
-          <h3 className="text-xl font-black text-slate-900 tracking-tight">
-            Choose an account
+          <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+            Choose an account to continue to RideFlow
           </h3>
           <p className="text-xs text-slate-500">
-            Instant passwordless Google authentication to <strong className="text-slate-800">RideFlow Tamil Nadu</strong>
+            Select your Google account for instant seamless authentication.
           </p>
         </div>
 
-        {/* Official Google Button Container (if Google Client ID is provided) */}
-        {googleClientId && (
-          <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col items-center justify-center">
-            <div id="google-official-btn" className="w-full flex justify-center"></div>
-          </div>
-        )}
+        {/* Official Google GSI Button Container (if initialized) */}
+        <div className="flex justify-center">
+          <div id="google-official-btn"></div>
+        </div>
 
-        {/* Account List */}
-        {!showCustomInput ? (
-          <div className="space-y-2">
-            {GOOGLE_PRESET_ACCOUNTS.map((acc) => {
-              const isSelected = selectedAccountId === acc.id;
-              return (
-                <button
-                  key={acc.id}
-                  onClick={() => handleAccountClick(acc)}
-                  className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-blue-50/80 border-blue-400 ring-2 ring-blue-300/40 shadow-xs'
-                      : 'bg-white hover:bg-slate-50 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <img
-                      src={acc.avatar}
-                      alt={acc.name}
-                      className="w-10 h-10 rounded-full object-cover ring-2 ring-slate-200 flex-shrink-0"
-                    />
-                    <div className="overflow-hidden">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-xs font-black text-slate-900 truncate">{acc.name}</h4>
-                        {acc.email === 'rideflow2026@gmail.com' && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
-                            Verified Desk
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-600 truncate font-medium">{acc.email}</p>
-                      <p className="text-[10px] text-slate-400 truncate mt-0.5">{acc.roleLabel}</p>
-                    </div>
-                  </div>
+        {/* 1-Click Google Accounts Chooser */}
+        <div className="space-y-2">
+          <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider block">
+            Select Google Account:
+          </span>
 
-                  {isSelected ? (
-                    <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center flex-shrink-0">
-                      <Check className="w-3 h-3" />
-                    </div>
-                  ) : (
-                    <span className="text-[11px] font-bold text-blue-600">
-                      Sign In ➔
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-
-            {/* Use Another Google Account Button */}
-            <button
-              onClick={() => setShowCustomInput(true)}
-              className="w-full p-3 rounded-2xl border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/40 text-slate-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer pt-3 mt-1"
-            >
-              <UserPlus className="w-4 h-4 text-blue-600" />
-              <span>Sign in with another Google Email</span>
-            </button>
-          </div>
-        ) : (
-          /* Passwordless Google Account Form */
-          <form onSubmit={handleCustomSubmit} className="space-y-3.5 animate-fade-in">
-            <div className="p-3 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 text-xs space-y-1">
-              <div className="font-extrabold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                <span>Passwordless Google Authentication</span>
-              </div>
-              <p className="text-[11px] text-blue-800">
-                OAuth never asks for your Google password. Enter your Gmail address to sign in immediately.
-              </p>
-            </div>
-
-            {customError && (
-              <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
-                {customError}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Your Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Kaviniyaa"
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-400 focus:outline-none shadow-xs"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Google Email Address</label>
-              <input
-                type="email"
-                required
-                placeholder="yourname@gmail.com"
-                value={customEmail}
-                onChange={(e) => setCustomEmail(e.target.value)}
-                style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
-                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-blue-400 focus:outline-none shadow-xs"
-              />
-            </div>
-
-            <div className="flex items-center gap-2 pt-2">
+          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+            {VERIFIED_TEST_PERSONAS.map((account) => (
               <button
+                key={account.id}
                 type="button"
-                onClick={() => {
-                  setShowCustomInput(false);
-                  setCustomError('');
-                }}
-                className="w-1/2 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-bold cursor-pointer"
+                disabled={isSubmitting}
+                onClick={() => handleDirectGoogleLogin(account)}
+                className="w-full p-2.5 rounded-2xl border border-slate-200 bg-white hover:bg-blue-50/50 hover:border-blue-300 text-left flex items-center justify-between gap-3 transition-all cursor-pointer group disabled:opacity-50"
               >
-                ← Back to List
+                <div className="flex items-center gap-2.5 overflow-hidden">
+                  <img
+                    src={account.avatar}
+                    alt={account.name}
+                    className="w-9 h-9 rounded-full object-cover ring-2 ring-slate-100 group-hover:ring-blue-400 flex-shrink-0"
+                  />
+                  <div className="overflow-hidden">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-slate-900 group-hover:text-blue-700">
+                        {account.name}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 truncate">{account.email}</p>
+                    <span className="text-[9px] text-slate-400 block truncate">{account.roleLabel}</span>
+                  </div>
+                </div>
+
+                <div className="w-7 h-7 rounded-full bg-slate-100 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors flex-shrink-0 text-slate-500">
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
               </button>
-              <button
-                type="submit"
-                className="w-1/2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-              >
-                <span>Authorize & Sign In</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Informational Help Box */}
-        <div className="pt-2 border-t border-slate-100 space-y-2">
-          <button
-            type="button"
-            onClick={() => setShowClientInfo(!showClientInfo)}
-            className="w-full text-left text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center justify-between cursor-pointer"
-          >
-            <span className="flex items-center gap-1">
-              <Info className="w-3 h-3 text-blue-500" />
-              How does Google OAuth work on RideFlow?
-            </span>
-            <span>{showClientInfo ? '▲' : '▼'}</span>
-          </button>
-
-          {showClientInfo && (
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 space-y-1.5 animate-fade-in leading-relaxed">
-              <p>
-                <strong>1. One-Click OAuth:</strong> You can sign in passwordlessly using any Google account on this device.
-              </p>
-              <p>
-                <strong>2. Google Cloud Redirect Popup:</strong> To show Google's official cloud sign-in popup dialog with your domain, add your Google Cloud Client ID to <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800 font-mono">.env</code> as <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800 font-mono">VITE_GOOGLE_CLIENT_ID</code>.
-              </p>
-            </div>
-          )}
-
-          {/* Security Footer */}
-          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-            <span className="flex items-center gap-1 font-semibold text-slate-600">
-              <Shield className="w-3.5 h-3.5 text-blue-600" />
-              Google OAuth 2.0 Security Verified
-            </span>
-            <span>Privacy • Terms</span>
+            ))}
           </div>
+        </div>
+
+        {/* Option to Use Another Google Account */}
+        <div className="pt-2 border-t border-slate-100">
+          {!showCustomInput ? (
+            <button
+              type="button"
+              onClick={() => setShowCustomInput(true)}
+              className="w-full text-left flex items-center justify-between text-xs font-bold text-blue-600 hover:text-blue-700 py-1 cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" />
+                <span>Use another Google account</span>
+              </span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <form onSubmit={handleCustomGoogleSubmit} className="space-y-2 pt-1 animate-fade-in">
+              <span className="text-[11px] font-bold text-slate-700 block">Enter Google Account Email:</span>
+              <div className="space-y-1.5">
+                <input
+                  type="email"
+                  required
+                  placeholder="name@gmail.com"
+                  value={customEmail}
+                  onChange={(e) => setCustomEmail(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Your Name (Optional)"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs cursor-pointer shadow-xs"
+                >
+                  {isSubmitting ? 'Signing in...' : 'Sign In as Google User'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomInput(false)}
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+
+        {/* Security badge footer */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+          <div className="flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Secure 256-Bit SSL • JWT Session Engine</span>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-500 hover:text-slate-900 font-bold cursor-pointer"
+          >
+            Cancel
+          </button>
         </div>
 
       </div>

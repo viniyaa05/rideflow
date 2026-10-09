@@ -50,16 +50,22 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
   }, [isOpen, setIsOpen]);
 
   const isSuperAdmin = Boolean(
-    user &&
-    (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
-    (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
+    user && (
+      user.role === 'SUPER_ADMIN' ||
+      user.role === 'admin' ||
+      user.isAdmin === true ||
+      user.email?.toLowerCase() === 'admin@rideflow.in' ||
+      user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in' ||
+      user.id === 'usr_super_admin' ||
+      user.id === 'usr_admin_tn'
+    )
   );
 
   const navItems = [
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard, badge: null },
     { id: 'compare', label: t('compareAndBook'), icon: Compass, badge: 'Smart' },
     { id: 'rentals', label: t('rentals'), icon: KeyRound, badge: null },
-    { id: 'drivers', label: t('drivers'), icon: Car, badge: null },
+    { id: 'drivers', label: t('drivers'), icon: Car, badge: 'Car & Bike' },
     { id: 'carpool', label: t('carpool'), icon: Users, badge: 'Popular' },
     { id: 'reviews', label: t('reviews'), icon: Star, badge: null },
     { id: 'partner', label: t('partnerHub'), icon: Briefcase, badge: 'Host' },
@@ -144,7 +150,9 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
               />
               <div className="overflow-hidden">
                 <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate leading-tight">{user?.name || 'Alex Chen'}</h4>
-                <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 block truncate">{user?.roleLabel || user?.loyaltyTier || 'Member'}</span>
+                <span className={`text-[10px] font-bold block truncate ${isSuperAdmin ? 'text-rose-600 dark:text-rose-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                  {isSuperAdmin ? 'Root Administrator (Super Admin)' : (user?.roleLabel || user?.loyaltyTier || 'Member')}
+                </span>
               </div>
             </div>
 
@@ -369,8 +377,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, on
             </div>
 
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {personas
-                .filter((p) => p.id !== 'usr_super_admin' && p.role !== 'SUPER_ADMIN' && p.email?.toLowerCase() !== 'admin@rideflow.in')
+              {(personas || [])
                 .map((p) => {
                 const isCurrent = user?.id === p.id;
                 return (

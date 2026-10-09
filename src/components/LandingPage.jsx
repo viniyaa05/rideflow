@@ -22,7 +22,10 @@ import {
   Zap,
   Info,
   CheckCircle2,
-  X
+  X,
+  Tag,
+  Sparkles,
+  Percent
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
@@ -94,6 +97,16 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
   // GPS Location Banner
   const [locationBannerOpen, setLocationBannerOpen] = useState(true);
   const [isLocating, setIsLocating] = useState(false);
+
+  // 50% OFF First Ride Promo Code State
+  const [copiedCode, setCopiedCode] = useState(false);
+  const handleCopyCode = () => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText('FIRST50');
+    }
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2500);
+  };
 
   // Fetch real-world distance via Express Backend API on corridor change
   useEffect(() => {
@@ -281,6 +294,56 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
         {/* Real Specific Headline Leading with Real Numbers */}
         <div className="text-center max-w-3xl mx-auto space-y-4 mb-10">
           
+          {/* 50% OFF FIRST RIDE PROMOTIONAL BANNER */}
+          <div className="max-w-2xl mx-auto mb-6 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-orange-500/15 border-2 border-amber-400/50 dark:border-amber-500/30 backdrop-blur-sm flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg group hover:border-amber-500 transition-all">
+            <div className="flex items-center gap-3 text-left">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-rose-500 text-white flex items-center justify-center font-black text-lg shadow-md flex-shrink-0 animate-pulse">
+                <Percent className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                    {currentLang === 'ta' ? 'வரவேற்புச் சலுகை' : currentLang === 'hi' ? 'स्वागत ऑफ़र' : 'Welcome Offer'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white font-black text-[10px] uppercase tracking-wide">
+                    50% OFF
+                  </span>
+                </div>
+                <p className="text-sm font-extrabold text-asphalt dark:text-sand">
+                  {currentLang === 'ta'
+                    ? 'உங்கள் முதல் பயணத்தில் 50% உடனடி தள்ளுபடி பெறுங்கள்!'
+                    : currentLang === 'hi'
+                    ? 'अपनी पहली राइड पर फ्लैट 50% की छूट पाएं!'
+                    : 'Flat 50% OFF on Your First Ride across Tamil Nadu!'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="px-3 py-1.5 rounded-xl bg-sand dark:bg-[#14120E] border border-amber-400/50 flex items-center gap-1.5 font-mono font-black text-xs sm:text-sm text-amber-600 dark:text-amber-400 tracking-wider">
+                <Tag className="w-3.5 h-3.5" />
+                FIRST50
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-black text-xs shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+              >
+                {copiedCode ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{currentLang === 'ta' ? 'நகலெடுக்கப்பட்டது!' : 'Copied!'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{currentLang === 'ta' ? 'குறியீடு நகல்' : 'Copy Code'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-rickshaw/10 border border-rickshaw/30 text-rickshaw text-xs font-bold">
             <MapPin className="w-3.5 h-3.5" />
             <span>
@@ -435,7 +498,7 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
               </div>
             </div>
 
-            {/* 3. Private Chauffeur */}
+            {/* 3. Ride with Driver (Driver with Vehicle) */}
             <div 
               onClick={() => onSelectService ? onSelectService('drivers') : onOpenLogin()}
               className="p-4 rounded-2xl bg-sand/60 dark:bg-asphalt/60 border border-sand-border dark:border-asphalt-border hover:border-rickshaw transition-all cursor-pointer flex flex-col justify-between space-y-3"
@@ -443,15 +506,15 @@ export default function LandingPage({ onOpenLogin, onSelectService }) {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <span className="px-1.5 py-0.5 rounded bg-sand dark:bg-asphalt text-asphalt-muted dark:text-sand-dark font-bold text-[10px]">
-                    Door-to-Door
+                    Driver + Vehicle
                   </span>
                   <Car className="w-4 h-4 text-asphalt-muted dark:text-sand-dark" />
                 </div>
                 <h3 className="font-black text-sm text-asphalt dark:text-sand">
-                  {currentLang === 'ta' ? 'தனியார் ஓட்டுநர்' : currentLang === 'hi' ? 'प्राइवेट कैब' : 'Private Chauffeur'}
+                  {currentLang === 'ta' ? 'வாகனத்துடன் ஓட்டுநர்' : currentLang === 'hi' ? 'ड्राइवर व वाहन' : 'Ride with Driver'}
                 </h3>
                 <p className="text-[11px] text-asphalt-muted dark:text-sand-dark">
-                  Swift Dzire & Toyota Innova Crysta with verified captain.
+                  Car with Driver (AC/Non-AC, 1-6 seats) or Bike with Driver.
                 </p>
               </div>
 

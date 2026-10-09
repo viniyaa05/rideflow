@@ -47,9 +47,15 @@ function MainApp() {
   });
 
   const isSuperAdmin = Boolean(
-    user &&
-    (user.id === 'usr_super_admin' || user.email?.toLowerCase() === 'admin@rideflow.in' || user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in') &&
-    (user.role === 'SUPER_ADMIN' || user.isAdmin === true)
+    user && (
+      user.role === 'SUPER_ADMIN' ||
+      user.role === 'admin' ||
+      user.isAdmin === true ||
+      user.email?.toLowerCase() === 'admin@rideflow.in' ||
+      user.email?.toLowerCase() === 'admin@rideflow.tn.gov.in' ||
+      user.id === 'usr_super_admin' ||
+      user.id === 'usr_admin_tn'
+    )
   );
 
   // If non-admin user attempts to access admin tab, redirect to dashboard

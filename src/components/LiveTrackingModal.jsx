@@ -10,26 +10,34 @@ import {
   X, 
   CheckCircle2, 
   Compass, 
-  Zap,
-  Key,
-  Flame,
-  Radio,
-  Clock,
-  Car,
-  Bike,
-  Send,
-  Lock,
-  Unlock,
-  Volume2,
-  ExternalLink,
-  User,
-  Check,
-  CheckCheck
+  Zap, 
+  Key, 
+  Flame, 
+  Radio, 
+  Clock, 
+  Car, 
+  Bike, 
+  Send, 
+  Lock, 
+  Unlock, 
+  Volume2, 
+  ExternalLink, 
+  User, 
+  Check, 
+  CheckCheck,
+  Play,
+  Square,
+  FastForward,
+  Wifi,
+  RefreshCw,
+  Sliders
 } from 'lucide-react';
+import { io } from 'socket.io-client';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '../context/AuthContext';
 import { calculateDistanceKm } from '../utils/geoUtils';
+import { api } from '../services/api';
 
 export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
   const { user, verifyTripOtp } = useAuth();
@@ -40,8 +48,15 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
                  trip?.name?.toLowerCase().includes('enfield') || trip?.vehicle?.toLowerCase().includes('hunter') || 
                  trip?.title?.toLowerCase().includes('bike') || trip?.title?.toLowerCase().includes('ola');
 
+  // Booking room identifier for WebSockets
+  const bookingId = trip?.id || trip?.bookingId || 'TN-LIVE-1234';
+
   // Perspective: 'passenger' or 'driver'
   const [activePerspective, setActivePerspective] = useState(user?.role === 'driver' ? 'driver' : 'passenger');
+  const activePerspectiveRef = useRef(activePerspective);
+  useEffect(() => {
+    activePerspectiveRef.current = activePerspective;
+  }, [activePerspective]);
 
   // Coordinates resolution
   const defaultPickup = { lat: 13.0827, lng: 80.2707, label: trip?.from || trip?.location || 'Chennai Central Hub' };
@@ -52,16 +67,25 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
 
   // Real-time telemetry state
   const [vehiclePos, setVehiclePos] = useState({
-    lat: pickupCoords.lat + 0.008,
-    lng: pickupCoords.lng - 0.006
+    lat: pickupCoords.lat + 0.0075,
+    lng: pickupCoords.lng - 0.0065
   });
-  const [speed, setSpeed] = useState(38);
-  const [etaMinutes, setEtaMinutes] = useState(isRental ? 0 : 4);
-  const [distanceKm, setDistanceKm] = useState(0.8);
+  const [speed, setSpeed] = useState(36);
+  const [etaMinutes, setEtaMinutes] = useState(isRental ? 0 : 5);
+  const [distanceKm, setDistanceKm] = useState(0.85);
   const [isLocked, setIsLocked] = useState(true);
   const [hornActive, setHornActive] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [sosActive, setSosActive] = useState(false);
+
+  // Socket.IO Connection & Simulation state
+  const socketRef = useRef(null);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simProgress, setSimProgress] = useState(0);
+  const [driverStatusMessage, setDriverStatusMessage] = useState('Captain is approaching your pickup point');
+  const [broadcastGpsActive, setBroadcastGpsActive] = useState(false);
+  const watchIdRef = useRef(null);
 
   // OTP Verification state
   const [otpInput, setOtpInput] = useState('');
@@ -71,7 +95,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
   // Chat state
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState(() => {
-    const storageKey = `rideflow_chat_${trip?.id || 'TN-LIVE'}`;
+    const storageKey = `rideflow_chat_${bookingId}`;
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) return JSON.parse(saved);
@@ -101,16 +125,111 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
 
   // Persist chat messages
   useEffect(() => {
-    const storageKey = `rideflow_chat_${trip?.id || 'TN-LIVE'}`;
+    const storageKey = `rideflow_chat_${bookingId}`;
     localStorage.setItem(storageKey, JSON.stringify(chatMessages));
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  }, [chatMessages, bookingId]);
+
+  // Connect to Socket.IO Server on Port 5000
+  useEffect(() => {
+    const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:5000'
+      : window.location.origin;
+
+    const socket = io(backendUrl, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000
+    });
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      setSocketConnected(true);
+      // Join ride-specific room
+      socket.emit('join_ride', { bookingId });
+    });
+
+    socket.on('disconnect', () => {
+      setSocketConnected(false);
+    });
+
+    // Listen for live driver coordinates broadcasted from simulator or driver tab
+    socket.on('live_driver_pos', (data) => {
+      const { lat, lng, speedKmH = 35, progress = 0 } = data;
+      setVehiclePos({ lat, lng });
+      setSpeed(speedKmH);
+      setSimProgress(progress);
+
+      // Move Leaflet driver marker smoothly without re-rendering
+      if (vehicleMarkerRef.current) {
+        vehicleMarkerRef.current.setLatLng([lat, lng]);
+      }
+
+      // Append point to traveled trail
+      if (traveledPolylineRef.current) {
+        const latlngs = traveledPolylineRef.current.getLatLngs();
+        latlngs.push([lat, lng]);
+        traveledPolylineRef.current.setLatLngs(latlngs);
+      }
+
+      // Recalculate dynamic Haversine distance and dynamic ETA
+      if (mapInstanceRef.current) {
+        const distanceMeters = mapInstanceRef.current.distance([lat, lng], [pickupCoords.lat, pickupCoords.lng]);
+        const km = Math.max(0.05, +(distanceMeters / 1000).toFixed(2));
+        setDistanceKm(km);
+
+        const currentSpeed = Math.max(speedKmH, 18);
+        const dynamicEta = Math.max(1, Math.round((km / currentSpeed) * 60));
+        setEtaMinutes(dynamicEta);
+      }
+    });
+
+    // Driver arrival notification
+    socket.on('driver_arrived', (data) => {
+      setDriverStatusMessage(data?.message || '🎉 Captain has arrived at your pickup spot!');
+      setEtaMinutes(0);
+      setDistanceKm(0);
+      setSpeed(0);
+      setIsSimulating(false);
+    });
+
+    // Ride status transition (OTP verified -> in progress)
+    socket.on('trip_status_changed', (data) => {
+      if (data?.status === 'in_progress') {
+        setOtpVerified(true);
+        setDriverStatusMessage('🚀 OTP Verified! Trip is now in progress.');
+      } else if (data?.status === 'completed') {
+        setDriverStatusMessage('🏁 Destination reached. Ride completed.');
+      }
+    });
+
+    // Cross-tab real-time chat sync
+    socket.on('new_ride_message', (data) => {
+      if (data?.message) {
+        setChatMessages((prev) => {
+          if (prev.some(m => m.id === data.message.id)) return prev;
+          return [...prev, data.message];
+        });
+      }
+    });
+
+    // Simulation stopped notification
+    socket.on('simulation_stopped', () => {
+      setIsSimulating(false);
+    });
+
+    return () => {
+      if (watchIdRef.current && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+      socket.disconnect();
+    };
+  }, [bookingId, pickupCoords.lat, pickupCoords.lng]);
 
   // Leaflet Map Initialization
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    // Clean up existing instance if any
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
       mapInstanceRef.current = null;
@@ -121,7 +240,6 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
     const endLat = dropoffCoords.lat;
     const endLng = dropoffCoords.lng;
 
-    // Center map between pickup and dropoff
     const centerLat = (startLat + endLat) / 2;
     const centerLng = (startLng + endLng) / 2;
 
@@ -132,15 +250,14 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
       attributionControl: false
     });
 
-    // Add high performance OpenStreetMap tiles
+    // 100% Free OpenStreetMap Tiles
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19
     }).addTo(map);
 
-    // Zoom control in top right
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    // Custom Marker Icons using HTML & CSS
+    // Custom Passenger Pickup Pin
     const passengerIcon = L.divIcon({
       className: 'custom-passenger-pin',
       html: `
@@ -148,7 +265,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
           <div style="width: 28px; height: 28px; background: #10b981; border: 3px solid #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(16,185,129,0.5);">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           </div>
-          <div style="background: rgba(15,23,42,0.85); color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; white-space: nowrap; margin-top: 4px; border: 1px solid rgba(255,255,255,0.2);">
+          <div style="background: rgba(15,23,42,0.9); color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; white-space: nowrap; margin-top: 4px; border: 1px solid rgba(255,255,255,0.2);">
             📍 Pickup
           </div>
         </div>
@@ -157,6 +274,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
       iconAnchor: [40, 25]
     });
 
+    // Custom Destination Pin
     const destinationIcon = L.divIcon({
       className: 'custom-destination-pin',
       html: `
@@ -164,7 +282,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
           <div style="width: 28px; height: 28px; background: #8b5cf6; border: 3px solid #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(139,92,246,0.5);">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
           </div>
-          <div style="background: rgba(15,23,42,0.85); color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; white-space: nowrap; margin-top: 4px; border: 1px solid rgba(255,255,255,0.2);">
+          <div style="background: rgba(15,23,42,0.9); color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 6px; white-space: nowrap; margin-top: 4px; border: 1px solid rgba(255,255,255,0.2);">
             🏁 Destination
           </div>
         </div>
@@ -173,16 +291,17 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
       iconAnchor: [40, 25]
     });
 
+    // Animated Driver Vehicle Marker with Radar Glow
     const vehicleIcon = L.divIcon({
       className: 'custom-vehicle-radar-pin',
       html: `
         <div style="position: relative; display: flex; flex-direction: column; align-items: center;">
           <div style="position: absolute; width: 44px; height: 44px; background: rgba(6,182,212,0.25); border-radius: 50%; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; top: -7px;"></div>
-          <div style="width: 32px; height: 32px; background: #0284c7; border: 3px solid #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(2,132,199,0.6); z-index: 10;">
-            <span style="font-size: 14px;">${isBike ? '🏍️' : '🚗'}</span>
+          <div style="width: 34px; height: 34px; background: #0284c7; border: 3px solid #ffffff; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(2,132,199,0.6); z-index: 10;">
+            <span style="font-size: 16px;">${isBike ? '🏍️' : '🚗'}</span>
           </div>
           <div style="background: #0284c7; color: #ffffff; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 8px; white-space: nowrap; margin-top: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 10;">
-            ${speed} km/h • LIVE
+            LIVE • GPS
           </div>
         </div>
       `,
@@ -190,18 +309,17 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
       iconAnchor: [45, 25]
     });
 
-    // Add Pickup & Dropoff Markers
+    // Add Markers
     L.marker([startLat, startLng], { icon: passengerIcon }).addTo(map)
       .bindPopup(`<b>Pickup:</b> ${pickupCoords.label}`);
 
     L.marker([endLat, endLng], { icon: destinationIcon }).addTo(map)
       .bindPopup(`<b>Destination:</b> ${dropoffCoords.label}`);
 
-    // Initial vehicle position
     const vMarker = L.marker([vehiclePos.lat, vehiclePos.lng], { icon: vehicleIcon }).addTo(map);
     vehicleMarkerRef.current = vMarker;
 
-    // Realistic Waypoints connecting pickup, vehicle and dropoff
+    // Planned Route Path
     const waypoints = [
       [vehiclePos.lat, vehiclePos.lng],
       [startLat, startLng],
@@ -211,11 +329,32 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
 
     const plannedRoute = L.polyline(waypoints, {
       color: '#06b6d4',
-      weight: 5,
+      weight: 4,
       dashArray: '8, 8',
-      opacity: 0.8
+      opacity: 0.7
     }).addTo(map);
     routePolylineRef.current = plannedRoute;
+
+    // Traveled trail (solid line drawn behind driver)
+    const traveledTrail = L.polyline([[vehiclePos.lat, vehiclePos.lng]], {
+      color: '#10b981',
+      weight: 5,
+      opacity: 0.9
+    }).addTo(map);
+    traveledPolylineRef.current = traveledTrail;
+
+    // Interactive Map Click: in Driver mode, click anywhere to move the car!
+    map.on('click', (e) => {
+      if (activePerspectiveRef.current === 'driver' && socketRef.current) {
+        const { lat, lng } = e.latlng;
+        socketRef.current.emit('driver_location_update', {
+          bookingId,
+          lat,
+          lng,
+          speedKmH: 42
+        });
+      }
+    });
 
     mapInstanceRef.current = map;
 
@@ -226,48 +365,17 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
       [vehiclePos.lat, vehiclePos.lng]
     ], { padding: [50, 50] });
 
+    // Invalidate map size to prevent gray tiles
+    const t1 = setTimeout(() => mapInstanceRef.current?.invalidateSize(), 200);
+    const t2 = setTimeout(() => mapInstanceRef.current?.invalidateSize(), 600);
+
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
       map.remove();
       mapInstanceRef.current = null;
     };
   }, []);
-
-  // Real-Time GPS Movement Loop
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setVehiclePos((prev) => {
-        // Smoothly move towards pickup coordinates
-        const targetLat = pickupCoords.lat;
-        const targetLng = pickupCoords.lng;
-        const dLat = (targetLat - prev.lat) * 0.05;
-        const dLng = (targetLng - prev.lng) * 0.05;
-
-        const newLat = prev.lat + dLat;
-        const newLng = prev.lng + dLng;
-
-        // Update Leaflet marker directly without remounting
-        if (vehicleMarkerRef.current) {
-          vehicleMarkerRef.current.setLatLng([newLat, newLng]);
-        }
-
-        // Calculate real distance
-        const dist = calculateDistanceKm(newLat, newLng, targetLat, targetLng);
-        setDistanceKm(dist || 0.4);
-        if (dist && dist < 0.2) {
-          setEtaMinutes(1);
-        } else if (dist) {
-          setEtaMinutes(Math.max(1, Math.round(dist * 2.5)));
-        }
-
-        return { lat: newLat, lng: newLng };
-      });
-
-      // Realistic speed fluctuation
-      setSpeed(Math.floor(34 + Math.sin(Date.now() / 1500) * 12));
-    }, 1200);
-
-    return () => clearInterval(interval);
-  }, [pickupCoords.lat, pickupCoords.lng]);
 
   // Recenter map on vehicle
   const handleRecenter = () => {
@@ -293,16 +401,92 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
             weight: 3
           }).addTo(mapInstanceRef.current).bindPopup('📍 Your Current GPS Location').openPopup();
         },
-        () => {
-          handleRecenter();
-        }
+        () => handleRecenter()
       );
     } else {
       handleRecenter();
     }
   };
 
-  // Passenger sends a message to the driver
+  // 1-Laptop Route Simulation Controls (Calls Socket.IO Backend)
+  const handleStartSimulation = () => {
+    if (!socketRef.current) return;
+    setIsSimulating(true);
+    setDriverStatusMessage('🚗 Driver movement simulated along route (Socket.IO streaming)...');
+    socketRef.current.emit('start_route_simulation', {
+      bookingId,
+      startCoords: { lat: vehiclePos.lat, lng: vehiclePos.lng },
+      targetCoords: { lat: pickupCoords.lat, lng: pickupCoords.lng },
+      speedMultiplier: 1.4
+    });
+  };
+
+  const handleStopSimulation = () => {
+    if (!socketRef.current) return;
+    setIsSimulating(false);
+    socketRef.current.emit('stop_route_simulation', { bookingId });
+  };
+
+  // Step driver manual ping (+1 step closer)
+  const handleStepDriverPing = () => {
+    if (!socketRef.current) return;
+    const nextLat = vehiclePos.lat + (pickupCoords.lat - vehiclePos.lat) * 0.28;
+    const nextLng = vehiclePos.lng + (pickupCoords.lng - vehiclePos.lng) * 0.28;
+    socketRef.current.emit('driver_location_update', {
+      bookingId,
+      lat: nextLat,
+      lng: nextLng,
+      speedKmH: 38
+    });
+  };
+
+  // Signal arrival at pickup spot
+  const handleSignalArrival = () => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('driver_location_update', {
+      bookingId,
+      lat: pickupCoords.lat,
+      lng: pickupCoords.lng,
+      speedKmH: 0
+    });
+    socketRef.current.emit('driver_arrived_pickup', { bookingId });
+  };
+
+  // Method B: Device GPS / Chrome DevTools Sensors watchPosition
+  const toggleDeviceGpsBroadcast = () => {
+    if (broadcastGpsActive) {
+      if (watchIdRef.current && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      setBroadcastGpsActive(false);
+    } else {
+      if (!navigator.geolocation) {
+        alert('Geolocation is not supported by your browser.');
+        return;
+      }
+      setBroadcastGpsActive(true);
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const speedKmh = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 32;
+          if (socketRef.current) {
+            socketRef.current.emit('driver_location_update', {
+              bookingId,
+              lat,
+              lng,
+              speedKmH: speedKmh
+            });
+          }
+        },
+        (err) => console.warn('WatchPosition error:', err),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    }
+  };
+
+  // Passenger sends a message
   const handleSendPassengerMessage = (textToSend = null) => {
     const text = (textToSend || chatInput).trim();
     if (!text) return;
@@ -318,35 +502,39 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
     setChatMessages((prev) => [...prev, newMsg]);
     setChatInput('');
 
-    // If driver perspective is active, driver can answer manually.
-    // If passenger is watching, simulate driver response after 1.5s
+    // Emit over Socket.IO to any open Driver tab/window
+    if (socketRef.current) {
+      socketRef.current.emit('send_ride_message', { bookingId, message: newMsg });
+    }
+
+    // Auto-reply simulation if no active driver tab responds
     setTimeout(() => {
       const lower = text.toLowerCase();
       let autoReply = "Got it! See you at the pickup point in 2 minutes.";
       if (lower.includes('where') || lower.includes('eta') || lower.includes('far')) {
-        autoReply = `I am just ${distanceKm} km away on the service road. Arriving in ~${etaMinutes} mins in the ${trip?.vehicle || 'car'}!`;
+        autoReply = `I am just ${distanceKm} km away. Arriving in ~${etaMinutes} mins in the ${trip?.vehicle || 'car'}!`;
       } else if (lower.includes('gate') || lower.includes('outside') || lower.includes('here')) {
         autoReply = "Noted! Turning on hazard blinkers so you can spot me right away.";
       } else if (lower.includes('ac') || lower.includes('cold') || lower.includes('cool')) {
-        autoReply = "AC is already set to cool 22°C. Sanitized vehicle ready!";
-      } else if (lower.includes('luggage') || lower.includes('bag')) {
-        autoReply = "Yes, plenty of boot space ready for your luggage.";
+        autoReply = "AC is set to cool 22°C. Sanitized vehicle ready!";
       }
 
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: 'msg-reply-' + Date.now(),
-          sender: 'driver',
-          senderName: trip?.driverOrHost || trip?.hostName || 'Captain Karthik',
-          text: autoReply,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }
-      ]);
-    }, 1500);
+      const replyMsg = {
+        id: 'msg-reply-' + Date.now(),
+        sender: 'driver',
+        senderName: trip?.driverOrHost || trip?.hostName || 'Captain Karthik',
+        text: autoReply,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setChatMessages((prev) => [...prev, replyMsg]);
+      if (socketRef.current) {
+        socketRef.current.emit('send_ride_message', { bookingId, message: replyMsg });
+      }
+    }, 1800);
   };
 
-  // Driver sends a reply back to passenger
+  // Driver sends a reply
   const handleSendDriverReply = (e) => {
     e.preventDefault();
     if (!driverReplyInput.trim()) return;
@@ -361,26 +549,58 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
 
     setChatMessages((prev) => [...prev, replyMsg]);
     setDriverReplyInput('');
-  };
 
-  // Handle OTP verification
-  const handleVerifyOtp = (e) => {
-    e.preventDefault();
-    setOtpError('');
-    const targetOtp = trip?.rideOtp || '4892';
-    if (otpInput.trim() === targetOtp || otpInput.trim().length === 4) {
-      setOtpVerified(true);
-      if (verifyTripOtp) verifyTripOtp(trip?.id, otpInput.trim());
-    } else {
-      setOtpError(`Incorrect OTP. Please enter the authentic 4-digit code (${targetOtp}).`);
+    if (socketRef.current) {
+      socketRef.current.emit('send_ride_message', { bookingId, message: replyMsg });
     }
   };
 
-  // Keyless Lock/Unlock toggle
-  const toggleKeylessLock = () => {
-    setIsLocked(!isLocked);
+  // Driver verifies Passenger OTP
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setOtpError('');
+    const input = otpInput.trim();
+    if (!input || input.length !== 4) {
+      setOtpError('Please enter the authentic 4-digit ride OTP.');
+      return;
+    }
+
+    try {
+      const res = await api.verifyOTP(trip?.id, input);
+      if (res && res.success) {
+        setOtpVerified(true);
+        if (verifyTripOtp) verifyTripOtp(trip?.id, input);
+        if (socketRef.current) {
+          socketRef.current.emit('trip_status_changed', { bookingId, status: 'in_progress' });
+        }
+      } else {
+        const targetOtp = trip?.otp || trip?.rideOtp || '4892';
+        if (targetOtp && input === targetOtp) {
+          setOtpVerified(true);
+          if (verifyTripOtp) verifyTripOtp(trip?.id, input);
+          if (socketRef.current) {
+            socketRef.current.emit('trip_status_changed', { bookingId, status: 'in_progress' });
+          }
+        } else {
+          setOtpError(res?.error || `Invalid OTP. Verification failed. Check 4-digit code on rider screen.`);
+        }
+      }
+    } catch {
+      const targetOtp = trip?.otp || trip?.rideOtp || '4892';
+      if (targetOtp && input === targetOtp) {
+        setOtpVerified(true);
+        if (verifyTripOtp) verifyTripOtp(trip?.id, input);
+        if (socketRef.current) {
+          socketRef.current.emit('trip_status_changed', { bookingId, status: 'in_progress' });
+        }
+      } else {
+        setOtpError(`Invalid OTP "${input}". Verification failed.`);
+      }
+    }
   };
 
+  // Rental Controls
+  const toggleKeylessLock = () => setIsLocked(!isLocked);
   const handleSoundHorn = () => {
     setHornActive(true);
     setTimeout(() => setHornActive(false), 2000);
@@ -388,7 +608,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-      <div className="bg-slate-900 border border-slate-700 w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[95vh] text-white">
+      <div className="bg-slate-900 border border-slate-700 w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[96vh] text-white">
         
         {/* Top Header */}
         <div className="px-5 py-3.5 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between flex-shrink-0">
@@ -401,8 +621,15 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
                 <h3 className="font-extrabold text-sm sm:text-base tracking-tight text-white">
                   {isRental ? `Rental Fleet Radar: ${trip?.name || trip?.title}` : `Live GPS Navigation Radar`}
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-mono font-bold flex items-center gap-1 animate-pulse">
-                  ● LEAFLET GPS 10Hz
+                
+                {/* Socket.IO Status Badge */}
+                <span className={`px-2 py-0.5 rounded-full border text-[10px] font-mono font-bold flex items-center gap-1 ${
+                  socketConnected 
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
+                    : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${socketConnected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+                  {socketConnected ? `SOCKET.IO: ride_${bookingId}` : 'CONNECTING...'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -412,24 +639,26 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Perspective Toggle (Passenger <-> Driver) */}
+            {/* Perspective Switcher (Passenger vs Driver / Simulator) */}
             {!isRental && (
-              <div className="hidden sm:flex items-center bg-slate-950 p-1 rounded-xl border border-slate-700 text-xs font-bold">
+              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-700 text-xs font-bold">
                 <button
                   onClick={() => setActivePerspective('passenger')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                  className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                     activePerspective === 'passenger' ? 'bg-cyan-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Passenger View
+                  <User className="w-3.5 h-3.5" />
+                  <span>Passenger</span>
                 </button>
                 <button
                   onClick={() => setActivePerspective('driver')}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                  className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                     activePerspective === 'driver' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  Driver View
+                  <Car className="w-3.5 h-3.5" />
+                  <span>Driver Console</span>
                 </button>
               </div>
             )}
@@ -444,8 +673,8 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
         </div>
 
         {/* Real Interactive Leaflet Map Container */}
-        <div className="relative flex-1 min-h-[360px] sm:min-h-[420px] bg-slate-950 overflow-hidden">
-          <div ref={mapContainerRef} className="w-full h-full z-10" />
+        <div className="relative flex-1 min-h-[380px] sm:min-h-[440px] bg-slate-950 overflow-hidden">
+          <div ref={mapContainerRef} className="w-full h-full z-10" style={{ minHeight: '380px', height: '100%' }} />
 
           {/* Floating Map Controls Overlay */}
           <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
@@ -468,8 +697,23 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
             </button>
           </div>
 
+          {/* Top-Center Live Ride Status & Dynamic ETA Banner */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 hidden md:flex items-center gap-3 bg-slate-900/95 border border-slate-700/90 px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md">
+            <div className="flex items-center gap-2">
+              <span className={`w-2.5 h-2.5 rounded-full ${isSimulating ? 'bg-cyan-400 animate-ping' : 'bg-emerald-400'}`} />
+              <span className="text-xs font-bold text-slate-200">
+                {driverStatusMessage}
+              </span>
+            </div>
+            <div className="h-4 w-px bg-slate-700" />
+            <div className="flex items-center gap-1 text-emerald-400 font-extrabold text-sm">
+              <Clock className="w-3.5 h-3.5" />
+              <span>{etaMinutes > 0 ? `ETA: ${etaMinutes} mins` : 'Arrived at spot!'}</span>
+            </div>
+          </div>
+
           {/* Telemetry HUD Badge */}
-          <div className="absolute top-4 right-14 z-20 hidden sm:flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 p-2.5 rounded-2xl shadow-xl backdrop-blur-sm text-xs">
+          <div className="absolute top-4 right-14 z-20 flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 p-2.5 rounded-2xl shadow-xl backdrop-blur-sm text-xs">
             <div className="flex items-center gap-1.5 text-cyan-400 font-mono font-bold pr-2 border-r border-slate-700">
               <Zap className="w-3.5 h-3.5" />
               <span>{speed} KM/H</span>
@@ -479,7 +723,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
               <span>{isRental ? 'Available' : `${etaMinutes} MINS ETA`}</span>
             </div>
             <div className="text-slate-300 font-mono font-bold">
-              <span>{distanceKm} KM AWAY</span>
+              <span>{distanceKm} KM</span>
             </div>
           </div>
 
@@ -515,7 +759,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
                 <div className="flex items-center gap-2">
                   <MessageSquare className="w-4 h-4 text-cyan-400" />
                   <h4 className="text-xs font-extrabold text-white">
-                    {activePerspective === 'driver' ? 'Passenger Direct Queries' : `Chat with ${trip?.driverOrHost || 'Driver'}`}
+                    {activePerspective === 'driver' ? 'Passenger Direct Messages' : `Chat with ${trip?.driverOrHost || 'Driver'}`}
                   </h4>
                 </div>
                 <button
@@ -553,10 +797,10 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Passenger Quick Chips */}
+              {/* Quick Chips */}
               {activePerspective === 'passenger' && (
                 <div className="p-2 border-t border-slate-800 bg-slate-950/50 flex items-center gap-1.5 overflow-x-auto">
-                  {['Where are you?', 'Waiting at Gate 2', 'Turn on AC please', 'I have luggage'].map((chip) => (
+                  {['Where are you?', 'Waiting at pickup', 'Turn on AC please', 'I have luggage'].map((chip) => (
                     <button
                       key={chip}
                       onClick={() => handleSendPassengerMessage(chip)}
@@ -568,7 +812,7 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
                 </div>
               )}
 
-              {/* Passenger Chat Input */}
+              {/* Chat Form */}
               {activePerspective === 'passenger' ? (
                 <form
                   onSubmit={(e) => {
@@ -593,7 +837,6 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
                   </button>
                 </form>
               ) : (
-                /* Driver Answer Box */
                 <form
                   onSubmit={handleSendDriverReply}
                   className="p-3 bg-indigo-950/70 border-t border-indigo-800/80 flex flex-col gap-2"
@@ -620,9 +863,116 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
                   </div>
                 </form>
               )}
-
             </div>
           )}
+        </div>
+
+        {/* Dedicated 1-Laptop Student Simulation & Telemetry Bar */}
+        <div className="bg-slate-950 px-4 py-2.5 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          
+          {/* Perspective-based Toolbar */}
+          {activePerspective === 'passenger' ? (
+            <div className="flex flex-wrap items-center justify-between w-full gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono font-bold text-[10px]">
+                  🎓 1-LAPTOP WORKFLOW
+                </span>
+                <span className="text-slate-400 text-xs hidden sm:inline">
+                  Test real-time Socket.IO GPS without 2 phones:
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {!isSimulating ? (
+                  <button
+                    onClick={handleStartSimulation}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Run Route Simulation</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStopSimulation}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer animate-pulse"
+                  >
+                    <Square className="w-3.5 h-3.5" />
+                    <span>Stop Simulation ({simProgress}%)</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={handleStepDriverPing}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1 border border-slate-700 transition-colors cursor-pointer"
+                  title="Emit +1 GPS coordinate step towards pickup"
+                >
+                  <FastForward className="w-3 h-3 text-cyan-400" />
+                  <span>Step +1 Ping</span>
+                </button>
+
+                <button
+                  onClick={() => setActivePerspective('driver')}
+                  className="px-2.5 py-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 font-bold text-xs border border-indigo-500/40 transition-colors cursor-pointer"
+                >
+                  Open Driver View ➔
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Driver Cockpit & Telemetry Toolbar */
+            <div className="flex flex-wrap items-center justify-between w-full gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-mono font-bold text-[10px]">
+                  🕹️ DRIVER COCKPIT (TAB 2)
+                </span>
+                <span className="text-slate-400 text-xs hidden sm:inline">
+                  Broadcasting coordinates to room: <code className="text-cyan-400">ride_{bookingId}</code>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {!isSimulating ? (
+                  <button
+                    onClick={handleStartSimulation}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    <span>Start Trip Simulation</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStopSimulation}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
+                  >
+                    <Square className="w-3.5 h-3.5" />
+                    <span>Pause Sim</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={handleSignalArrival}
+                  className="px-2.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1 shadow-md cursor-pointer"
+                >
+                  <MapPin className="w-3 h-3" />
+                  <span>Arrived at Pickup</span>
+                </button>
+
+                <button
+                  onClick={toggleDeviceGpsBroadcast}
+                  className={`px-2.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 border transition-colors cursor-pointer ${
+                    broadcastGpsActive 
+                      ? 'bg-cyan-600 text-white border-cyan-400 animate-pulse' 
+                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white'
+                  }`}
+                  title="Stream physical browser GPS or DevTools Sensors emulation live"
+                >
+                  <Wifi className="w-3 h-3 text-cyan-400" />
+                  <span>{broadcastGpsActive ? 'Streaming Sensor GPS' : 'Sensors Emulation'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
 
         {/* Bottom Command Panel */}
@@ -648,23 +998,48 @@ export default function LiveTrackingModal({ trip, onClose, onOpenChat }) {
             </div>
           </div>
 
-          {/* Passenger OTP & Perspective Status */}
+          {/* OTP Section: Passenger View shows OTP / Driver View lets Captain verify it */}
           {!isRental && (
             <div className="flex items-center gap-3 bg-slate-900/90 px-3.5 py-2 rounded-2xl border border-slate-700">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-amber-400" />
-                <div>
-                  <span className="text-[9px] text-amber-300 uppercase font-black block">Ride Start OTP</span>
-                  <span className="font-mono text-base font-black text-amber-400 tracking-widest">
-                    {trip?.rideOtp || '4892'}
+              {activePerspective === 'passenger' ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-amber-400" />
+                    <div>
+                      <span className="text-[9px] text-amber-300 uppercase font-black block">Ride Start OTP</span>
+                      <span className="font-mono text-base font-black text-amber-400 tracking-widest">
+                        {trip?.rideOtp || trip?.otp || '4892'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border ${
+                    otpVerified ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-slate-800 text-slate-300 border-slate-600'
+                  }`}>
+                    {otpVerified ? '✓ OTP Verified' : 'Share with Driver'}
                   </span>
-                </div>
-              </div>
-              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border ${
-                otpVerified ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-slate-800 text-slate-300 border-slate-600'
-              }`}>
-                {otpVerified ? '✓ OTP Verified' : 'Share with Driver'}
-              </span>
+                </>
+              ) : (
+                /* Driver enters Passenger OTP */
+                <form onSubmit={handleVerifyOtp} className="flex items-center gap-2">
+                  <Key className="w-4 h-4 text-indigo-400" />
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={otpInput}
+                    onChange={(e) => setOtpInput(e.target.value)}
+                    placeholder="Enter OTP"
+                    className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-center font-mono font-bold text-xs text-amber-300 tracking-wider focus:outline-none focus:border-indigo-400"
+                  />
+                  <button
+                    type="submit"
+                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs cursor-pointer"
+                  >
+                    Verify
+                  </button>
+                  {otpVerified && <span className="text-emerald-400 text-xs font-bold">✓ Active</span>}
+                  {otpError && <span className="text-rose-400 text-[10px]">{otpError}</span>}
+                </form>
+              )}
             </div>
           )}
 

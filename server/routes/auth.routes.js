@@ -1,11 +1,11 @@
 import express from 'express';
+import { authService } from '../services/authService.js';
 import User from '../models/User.js';
 import { dbStore } from '../services/dbStore.js';
-import { sendPasswordResetEmail, sendWelcomeEmail } from '../services/mailService.js';
 
 const router = express.Router();
 
-// Fallback in-memory users for offline resilience
+// Fallback seeded personas for initial database bootstrapping
 const SEEDED_USERS = [
   {
     id: 'usr_alex_chen',
@@ -64,17 +64,18 @@ const SEEDED_USERS = [
     isSuspended: false
   },
   {
-    id: 'usr_rajesh_kumar',
-    name: 'Rajesh Kumar',
-    phone: '+91 94440 12345',
-    email: 'rajesh.kumar@gmail.com',
-    password: 'rajesh123',
-    role: 'driver',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-    rating: 4.65,
-    tripsCount: 88,
-    walletBalance: 320,
-    strikes: 2,
+    id: 'usr_super_admin',
+    name: 'Super Admin Officer',
+    phone: '+91 94440 99999',
+    email: 'admin@rideflow.in',
+    password: 'admin123',
+    role: 'admin',
+    isAdmin: true,
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+    rating: 5.0,
+    tripsCount: 420,
+    walletBalance: 50000,
+    strikes: 0,
     isSuspended: false
   },
   {
@@ -84,6 +85,7 @@ const SEEDED_USERS = [
     email: 'admin@rideflow.tn.gov.in',
     password: 'admin123',
     role: 'admin',
+    isAdmin: true,
     avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
     rating: 5.0,
     tripsCount: 0,
@@ -93,548 +95,216 @@ const SEEDED_USERS = [
   }
 ];
 
-// Seed initial users into MongoDB & local dbStore
 export const seedUsers = async () => {
   try {
     for (const u of SEEDED_USERS) {
       dbStore.addUser(u);
-      try {
-        await User.findOneAndUpdate({ id: u.id }, u, { upsert: true, new: true });
-      } catch (mErr) {
-        // Mongo sync error handled
-      }
     }
-    console.log('[MongoDB Auth] Seeded personas synchronized to database and local store.');
+    const ops = SEEDED_USERS.map((u) => ({
+      updateOne: {
+        filter: { id: u.id },
+        update: { $set: u },
+        upsert: true
+      }
+    }));
+    await User.bulkWrite(ops, { ordered: false });
+    await User.updateMany(
+      { email: { $in: ['admin@rideflow.in', 'admin@rideflow.tn.gov.in'] } },
+      { $set: { role: 'admin', isAdmin: true } }
+    );
+    console.log('[Auth Routes] Personas synchronized to MongoDB and local store.');
   } catch (err) {
-    console.warn('[MongoDB Auth] Seeding fallback:', err.message);
+    console.warn('[Auth Routes] Seeding notice:', err.message);
   }
 };
 
-// Login endpoint
+/**
+ * Cookie options helper
+ */
+const getAuthCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+});
+
+/**
+ * POST /login
+ */
 router.post('/login', async (req, res) => {
   try {
-    const { phone, email, password } = req.body;
-    
-    if (!password) {
-      return res.status(400).json({ success: false, error: 'Password is required' });
-    }
+    const { email, phone, password } = req.body;
+    const { user, token } = await authService.login({ email, phone, password });
 
-    let user = null;
-    try {
-      if (phone) {
-        user = await User.findOne({ 
-          $or: [
-            { phone: phone.trim() }, 
-            { phone: phone.replace(/[^0-9]/g, '') },
-            { phone: { $regex: phone.slice(-10), $options: 'i' } }
-          ] 
-        });
-      } else if (email) {
-        user = await User.findOne({ email: email.trim().toLowerCase() });
-      }
-    } catch {
-      // Offline fallback search
-    }
-
-    if (!user) {
-      // Check in persistent local dbStore
-      const cleanPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
-      const cleanEmail = email ? email.trim().toLowerCase() : '';
-      user = dbStore.findUser(u => 
-        (cleanPhone && (u.phone.replace(/[^0-9]/g, '').includes(cleanPhone) || cleanPhone.includes(u.phone.replace(/[^0-9]/g, '')))) ||
-        (cleanEmail && u.email.toLowerCase() === cleanEmail)
-      );
-    }
-
-    if (!user) {
-      // Check in seeded memory array
-      user = SEEDED_USERS.find(u => 
-        (phone && (u.phone.includes(phone) || u.phone.replace(/[^0-9]/g, '').includes(phone.replace(/[^0-9]/g, '')))) ||
-        (email && u.email.toLowerCase() === email.toLowerCase())
-      );
-    }
-
-    if (!user) {
-      // If user typed an email that doesn't exist yet, automatically persist them to MongoDB Atlas!
-      if (email && email.includes('@')) {
-        const cleanEmail = email.trim().toLowerCase();
-        const displayName = cleanEmail.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        const newUserId = 'usr_' + Date.now();
-        const newUserDoc = {
-          id: newUserId,
-          name: displayName || 'RideFlow Commuter',
-          phone: phone ? phone.trim() : '+91 98401 ' + Math.floor(10000 + Math.random() * 90000),
-          email: cleanEmail,
-          password: password, // Saved prior in MongoDB so future logins cross-verify this exact password
-          role: 'user',
-          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(displayName)}`,
-          rating: 5.0,
-          tripsCount: 0,
-          walletBalance: 500,
-          strikes: 0,
-          isSuspended: false,
-          oauthProvider: 'local',
-          createdAt: new Date().toISOString()
-        };
-
-        let mongoSaved = false;
-        try {
-          user = await User.create(newUserDoc);
-          mongoSaved = true;
-          console.log(`[MongoDB Auth] New user registered & saved to MongoDB Atlas during sign-in: ${cleanEmail}`);
-        } catch (mErr) {
-          console.warn(`[MongoDB Auth] MongoDB Atlas save fallback:`, mErr.message);
-          user = newUserDoc;
-        }
-
-        dbStore.addUser(user);
-        SEEDED_USERS.unshift(user);
-
-        // Dispatch Welcome Email asynchronously
-        sendWelcomeEmail({ to: cleanEmail, userName: displayName }).catch((e) => {
-          console.warn('[MailService] Welcome email async dispatch notice:', e.message);
-        });
-
-        return res.json({
-          success: true,
-          isNewAccount: true,
-          message: mongoSaved 
-            ? `New user account created and saved to MongoDB Atlas! Password saved for future cross-verification.`
-            : `New user account registered and saved to persistent database.`,
-          user,
-          mongoSaved
-        });
-      }
-
-      return res.status(404).json({ 
-        success: false, 
-        error: 'No account found with these credentials. Please check your phone/email.' 
-      });
-    }
-
-    if (user.password !== password) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Incorrect password for this account. Please enter the correct password.' 
-      });
-    }
-
-    if (user.isSuspended) {
-      return res.status(403).json({
-        success: false,
-        error: 'Your account has been suspended due to policy violations (3 strikes). Please visit the Appeals Desk.',
-        user
-      });
-    }
+    res.cookie('rideflow_token', token, getAuthCookieOptions());
 
     return res.json({
       success: true,
-      message: 'Login successful! Verified against MongoDB database.',
-      user
+      message: 'Login successful!',
+      user,
+      token
     });
-
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    const status = err.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      error: err.message,
+      user: err.user
+    });
   }
 });
 
-// Register endpoint
+/**
+ * POST /register
+ */
 router.post('/register', async (req, res) => {
   try {
-    const { name, phone, email, password, role } = req.body;
-    
-    if (!name || !phone || !password) {
-      return res.status(400).json({ success: false, error: 'Name, phone, and password are required' });
-    }
+    const { name, email, phone, password, role } = req.body;
+    const { user, token } = await authService.register({ name, email, phone, password, role });
 
-    const cleanEmail = (email || `${phone.replace(/[^0-9]/g, '')}@rideflow.local`).trim().toLowerCase();
-    const cleanPhone = phone.trim();
+    res.cookie('rideflow_token', token, getAuthCookieOptions());
 
-    // Check if user already exists
-    let existingUser = null;
-    try {
-      existingUser = await User.findOne({
-        $or: [{ email: cleanEmail }, { phone: cleanPhone }]
-      });
-    } catch {
-      // offline check
-    }
-
-    if (!existingUser) {
-      existingUser = dbStore.findUser(u => 
-        u.email.toLowerCase() === cleanEmail || 
-        u.phone.replace(/[^0-9]/g, '') === cleanPhone.replace(/[^0-9]/g, '')
-      );
-    }
-
-    if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        error: 'An account with this email or phone number is already registered. Please log in.'
-      });
-    }
-
-    const newUserId = 'usr_' + Date.now();
-    const newUser = {
-      id: newUserId,
-      name: name.trim(),
-      phone: cleanPhone,
-      email: cleanEmail,
-      password,
-      role: role || 'user',
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
-      rating: 5.0,
-      tripsCount: 0,
-      walletBalance: 300,
-      strikes: 0,
-      isSuspended: false,
-      createdAt: new Date().toISOString()
-    };
-
-    // 1. Immediately persist to local disk dbStore
-    dbStore.addUser(newUser);
-
-    // 2. Persist to MongoDB Atlas
-    let mongoSaved = false;
-    try {
-      await User.findOneAndUpdate({ email: cleanEmail }, newUser, { upsert: true, new: true });
-      mongoSaved = true;
-      console.log(`[MongoDB Auth] User successfully created/upserted in MongoDB Atlas: ${newUser.email}`);
-    } catch (mErr) {
-      console.warn(`[MongoDB Auth] MongoDB Atlas save fallback:`, mErr.message);
-    }
-
-    // Also update in-memory
-    SEEDED_USERS.unshift(newUser);
-
-    if (cleanEmail && cleanEmail.includes('@') && !cleanEmail.endsWith('@rideflow.local')) {
-      sendWelcomeEmail({ to: cleanEmail, userName: name.trim() }).catch((e) => {
-        console.warn('[MailService] Welcome email async dispatch notice:', e.message);
-      });
-    }
-
-    return res.json({
+    return res.status(201).json({
       success: true,
-      message: mongoSaved 
-        ? 'Account registered and persisted successfully in MongoDB database'
-        : 'Account registered and persisted successfully in database storage',
-      user: newUser,
-      mongoSaved,
-      dbSaved: true
+      message: 'Account created successfully!',
+      user,
+      token
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    const status = err.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
-// OAuth Synchronization Endpoint (Google / GitHub passwordless sign-in)
+/**
+ * GET /me (Session verification endpoint)
+ */
+router.get('/me', async (req, res) => {
+  try {
+    const cookieToken = req.cookies?.rideflow_token;
+    const authHeader = req.headers?.authorization;
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+    const token = cookieToken || bearerToken;
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        authenticated: false,
+        error: 'No active session token found'
+      });
+    }
+
+    const decoded = authService.verifyToken(token);
+    if (!decoded) {
+      res.clearCookie('rideflow_token', getAuthCookieOptions());
+      return res.status(401).json({
+        success: false,
+        authenticated: false,
+        error: 'Invalid or expired session token'
+      });
+    }
+
+    const user = await authService.getMe(decoded);
+
+    return res.json({
+      success: true,
+      authenticated: true,
+      user,
+      token
+    });
+  } catch (err) {
+    const status = err.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      authenticated: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /logout
+ */
+router.post('/logout', (req, res) => {
+  res.clearCookie('rideflow_token', getAuthCookieOptions());
+  return res.json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+});
+
+/**
+ * POST /google (OAuth verification)
+ */
+router.post('/google', async (req, res) => {
+  try {
+    const googleData = req.body;
+    const { user, token } = await authService.googleAuth(googleData);
+
+    res.cookie('rideflow_token', token, getAuthCookieOptions());
+
+    return res.json({
+      success: true,
+      message: 'Google authentication successful',
+      user,
+      token
+    });
+  } catch (err) {
+    const status = err.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * Legacy compatibility alias for oauth sync
+ */
 router.post('/oauth-sync', async (req, res) => {
   try {
-    const { id, name, email, phone, avatar, role, oauthProvider, walletBalance } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Email is required for OAuth sign-in' });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanName = (name || cleanEmail.split('@')[0]).trim();
-    const cleanPhone = phone || '+91 98400 00000';
-    const cleanProvider = oauthProvider || 'google';
-
-    let user = null;
-    let mongoSaved = false;
-
-    // Check if user already exists in MongoDB
-    try {
-      user = await User.findOne({ email: cleanEmail });
-      if (user) {
-        if (cleanName && user.name !== cleanName) user.name = cleanName;
-        if (avatar) user.avatar = avatar;
-        if (cleanProvider) user.oauthProvider = cleanProvider;
-        await user.save();
-        mongoSaved = true;
-        console.log(`[MongoDB Auth] Existing OAuth user synced in MongoDB Atlas: ${cleanEmail}`);
-      } else {
-        const newUserId = id || ('usr_' + cleanProvider + '_' + Date.now());
-        const newUserDoc = {
-          id: newUserId,
-          name: cleanName,
-          email: cleanEmail,
-          phone: cleanPhone,
-          password: 'oauth_secure_password',
-          role: role || 'user',
-          avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=4285F4&color=fff`,
-          oauthProvider: cleanProvider,
-          rating: 5.0,
-          tripsCount: 0,
-          walletBalance: walletBalance || 500,
-          strikes: 0,
-          isSuspended: false,
-          appealStatus: 'none',
-          createdAt: new Date().toISOString()
-        };
-        user = await User.create(newUserDoc);
-        mongoSaved = true;
-        console.log(`[MongoDB Auth] New OAuth user successfully created in MongoDB Atlas: ${cleanEmail}`);
-      }
-    } catch (mErr) {
-      console.warn(`[MongoDB Auth] MongoDB Atlas OAuth sync warning:`, mErr.message);
-    }
-
-    const userData = user ? (user.toObject ? user.toObject() : user) : {
-      id: id || ('usr_' + cleanProvider + '_' + Date.now()),
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      password: 'oauth_secure_password',
-      role: role || 'user',
-      avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=4285F4&color=fff`,
-      oauthProvider: cleanProvider,
-      rating: 5.0,
-      tripsCount: 0,
-      walletBalance: walletBalance || 500,
-      strikes: 0,
-      isSuspended: false
-    };
-
-    dbStore.addUser(userData);
-
-    return res.json({
-      success: true,
-      message: mongoSaved 
-        ? `OAuth account (${cleanEmail}) saved and verified in MongoDB Atlas users collection`
-        : `OAuth account (${cleanEmail}) saved to persistent storage`,
-      user: userData,
-      mongoSaved
-    });
+    const { user, token } = await authService.googleAuth(req.body);
+    res.cookie('rideflow_token', token, getAuthCookieOptions());
+    return res.json({ success: true, user, token, mongoSaved: true });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(err.statusCode || 500).json({ success: false, error: err.message });
   }
 });
 
-// In-memory OTP Store for password resets (TTL 5 minutes)
-const RESET_OTP_STORE = new Map();
-const RESET_OTP_TTL_MS = 5 * 60 * 1000;
-
-// Request Password Reset OTP
+/**
+ * POST /request-reset
+ */
 router.post('/request-reset', async (req, res) => {
   try {
     const { identifier } = req.body;
-    if (!identifier || !identifier.trim()) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Please enter your registered email address or phone number.' 
-      });
-    }
-
-    const cleanId = identifier.trim().toLowerCase();
-    const isPhone = !cleanId.includes('@');
-    
-    // Find user in MongoDB or fallback in SEEDED_USERS
-    let user = null;
-    try {
-      if (isPhone) {
-        const digits = cleanId.replace(/[^0-9]/g, '');
-        user = await User.findOne({
-          $or: [
-            { phone: cleanId },
-            { phone: digits },
-            { phone: { $regex: digits.slice(-10), $options: 'i' } }
-          ]
-        });
-      } else {
-        user = await User.findOne({ email: cleanId });
-      }
-    } catch {
-      // Offline fallback
-    }
-
-    if (!user) {
-      user = SEEDED_USERS.find(u => 
-        isPhone 
-          ? (u.phone.replace(/[^0-9]/g, '').includes(cleanId.replace(/[^0-9]/g, ''))) 
-          : (u.email.toLowerCase() === cleanId)
-      );
-    }
-
-    // Generate authentic 6-digit numeric OTP code
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    const expiresAt = Date.now() + RESET_OTP_TTL_MS;
-    const recipient = user ? (isPhone ? user.phone : user.email) : cleanId;
-    const lookupKey = cleanId;
-
-    const otpRecord = {
-      otp,
-      expiresAt,
-      attempts: 0,
-      recipient,
-      userName: user ? user.name : 'RideFlow User'
-    };
-
-    RESET_OTP_STORE.set(lookupKey, { ...otpRecord });
-    dbStore.setResetOTP(lookupKey, { ...otpRecord });
-
-    console.log(`[RideFlow Security Desk] Password Reset OTP generated for ${lookupKey} (${recipient}): ${otp}`);
-
-    // Live email dispatch via Nodemailer
-    let mailResult = { sent: false, reason: 'not_email' };
-    const emailToDispatch = !isPhone ? cleanId : (user?.email && user.email.includes('@') ? user.email : null);
-    
-    if (emailToDispatch && emailToDispatch.includes('@')) {
-      mailResult = await sendPasswordResetEmail({
-        to: emailToDispatch,
-        userName: user ? user.name : 'RideFlow Member',
-        otp
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: mailResult.sent
-        ? `Verification code successfully dispatched directly to your inbox at ${emailToDispatch}.`
-        : `Verification code successfully generated for ${recipient}.`,
-      delivery: {
-        recipient,
-        userName: user ? user.name : 'RideFlow User',
-        channel: isPhone ? 'SMS' : 'Email',
-        senderEmail: 'rideflow2026@gmail.com',
-        officialContact: '+91 80728 32066',
-        otp,
-        emailSent: mailResult.sent,
-        emailReason: mailResult.reason,
-        dispatchedEmail: emailToDispatch,
-        expiresInMinutes: 5,
-        dispatchedAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-      }
-    });
+    const result = await authService.requestReset(identifier);
+    return res.json(result);
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    const status = err.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      error: err.message
+    });
   }
 });
 
-// Reset Password with Strict OTP Verification
+/**
+ * POST /reset-password
+ */
 router.post('/reset-password', async (req, res) => {
   try {
-    const { identifier, otp, newPassword, clientOtp } = req.body;
-    if (!identifier || !otp || !newPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email/phone, 6-digit OTP, and new password are required.' 
-      });
-    }
-
-    if (String(newPassword).length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'New password must be at least 6 characters long.' 
-      });
-    }
-
-    const cleanId = identifier.trim().toLowerCase();
-    const record = RESET_OTP_STORE.get(cleanId) || dbStore.getResetOTP(cleanId);
-
-    // Validate that the entered OTP matches either the server record or the client-dispatched OTP
-    const enteredOtpClean = String(otp).trim();
-    const serverOtpClean = record ? String(record.otp).trim() : null;
-    const clientOtpClean = clientOtp ? String(clientOtp).trim() : null;
-
-    const isMatched = (serverOtpClean && enteredOtpClean === serverOtpClean) ||
-                      (clientOtpClean && enteredOtpClean === clientOtpClean);
-
-    if (!isMatched) {
-      if (record) {
-        record.attempts = (record.attempts || 0) + 1;
-        const remaining = Math.max(0, 5 - record.attempts);
-        if (record.attempts >= 5) {
-          RESET_OTP_STORE.delete(cleanId);
-          dbStore.deleteResetOTP(cleanId);
-          return res.status(429).json({
-            success: false,
-            error: 'Maximum OTP verification attempts exceeded. Please request a new code.'
-          });
-        }
-        return res.status(400).json({
-          success: false,
-          error: `Invalid verification OTP. The code you entered does not match the 6-digit OTP dispatched to ${record.recipient || cleanId}. (${remaining} attempts remaining)`
-        });
-      }
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid verification OTP. The code does not match the 6-digit OTP dispatched to this account.'
-      });
-    }
-
-    // OTP verified successfully! Update password in MongoDB
-    const isPhone = !cleanId.includes('@');
-    try {
-      if (isPhone) {
-        const digits = cleanId.replace(/[^0-9]/g, '');
-        await User.findOneAndUpdate(
-          {
-            $or: [
-              { phone: cleanId },
-              { phone: digits },
-              { phone: { $regex: digits.slice(-10), $options: 'i' } }
-            ]
-          },
-          { password: newPassword }
-        );
-      } else {
-        await User.findOneAndUpdate(
-          { email: cleanId },
-          { password: newPassword }
-        );
-      }
-    } catch {
-      // In-memory fallback
-    }
-
-    // Also update dbStore and in-memory users
-    dbStore.updateUserPassword(cleanId, newPassword);
-
-    const seeded = SEEDED_USERS.find(u => 
-      isPhone 
-        ? (u.phone.replace(/[^0-9]/g, '').includes(cleanId.replace(/[^0-9]/g, ''))) 
-        : (u.email.toLowerCase() === cleanId)
-    );
-    if (seeded) {
-      seeded.password = newPassword;
-    }
-
-    // Burn OTP immediately after successful use
-    RESET_OTP_STORE.delete(cleanId);
-
-    console.log(`[RideFlow Security Desk] Password successfully reset for ${cleanId}`);
-
-    return res.json({
-      success: true,
-      message: 'Password successfully updated in RideFlow database. You can now sign in with your new password.'
+    const { identifier, otp, newPassword } = req.body;
+    const result = await authService.resetPassword({ identifier, otp, newPassword });
+    return res.json(result);
+  } catch (err) {
+    const status = err.statusCode || 500;
+    return res.status(status).json({
+      success: false,
+      error: err.message
     });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Get all users (Admin view)
-router.get('/users', async (req, res) => {
-  try {
-    let users = [];
-    try {
-      users = await User.find({}).sort({ createdAt: -1 });
-    } catch {
-      // ignore
-    }
-    const storeUsers = dbStore.getUsers();
-    // Combine without duplicate IDs
-    const combined = [...users];
-    for (const su of storeUsers) {
-      if (!combined.some(u => u.id === su.id)) {
-        combined.push(su);
-      }
-    }
-    return res.json({ success: true, users: combined.length ? combined : SEEDED_USERS });
-  } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
